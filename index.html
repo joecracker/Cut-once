@@ -78,11 +78,21 @@
   button.tool.small{ width:32px; height:32px; border-radius:10px; }
   button.tool.small svg{ width:16px; height:16px; }
   button.tool.active{ background:var(--pill-active); color:var(--pill-active-ink); }
+  #toolDraw svg{ display:none; }
+  #toolDraw.mode-pencil .icon-pencil{ display:block; }
+  #toolDraw.mode-line .icon-line{ display:block; }
+  #toolDraw.mode-erase .icon-erase{ display:block; }
+  #toolDraw.mode-line, #toolDraw.mode-erase{ background:var(--pill-active); color:var(--pill-active-ink); }
   button.tool.mic.listening{ background:var(--danger); color:#fff; }
   button.tool.mic.listening svg{ animation:micpulse 1s ease-in-out infinite; }
   @keyframes micpulse{ 0%,100%{ opacity:1; } 50%{ opacity:.55; } }
   button.tool:active{ filter:brightness(1.15); }
   button.tool.danger{ color:var(--danger); background:rgba(232,92,74,0.14); }
+  #inkSwatch{
+    width:16px; height:16px; border-radius:50%;
+    border:1.5px solid rgba(255,255,255,0.45);
+    display:block;
+  }
 
   .toast{
     position:fixed; left:50%; top:max(18px, env(safe-area-inset-top));
@@ -147,12 +157,12 @@
     <button id="infoClose" title="Close">&times;</button>
     <h2>How this works</h2>
     <ul>
-      <li>Pencil icon: draw. Tap it again to switch to eraser, tap again for pencil.</li>
+      <li>Pencil icon: freehand draw. Tap it to cycle to straight-line (drag point to point, it locks straight when you let go), tap again for eraser, tap again back to pencil.</li>
       <li>Curved arrow: undo, up to 12 steps back.</li>
       <li>Mic: tap to talk. Say a number, say "next line" to drop down a row. Tap again to stop.</li>
       <li>Paper airplane: send this pad as an image — text it, save it, whatever’s fastest.</li>
-      <li>Top-right, smaller icons: load a photo (camera or gallery), flip black/white, save to a slot, load a slot, wipe.</li>
-      <li>On a photo: pinch with two fingers to zoom in/out. One finger still draws.</li>
+      <li>Top-right, smaller icons: camera, gallery, flip black/white, save to a slot, load a slot, wipe.</li>
+      <li>On a photo, a color dot also shows up top-right — tap it to cycle pencil color (green/red/white/black) so it stays visible against light or dark parts of the photo.</li>
     </ul>
   </div>
 </div>
@@ -163,14 +173,21 @@
 </div>
 <div class="cursor-indicator" id="cursorDot"></div>
 <div class="toast" id="toast"></div>
-<input type="file" id="photoInput" accept="image/*" hidden>
+<input type="file" id="photoInputCamera" accept="image/*" capture="environment" hidden>
+<input type="file" id="photoInputGallery" accept="image/*" hidden>
 
 <div class="toolbar secondary">
-  <button class="tool small" id="toolPhoto" title="Photo">
+  <button class="tool small" id="toolCamera" title="Take a photo">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
+  </button>
+  <button class="tool small" id="toolGallery" title="Choose from gallery">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
   </button>
   <button class="tool small" id="toolTheme" title="Flip background">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg>
+  </button>
+  <button class="tool small" id="toolInk" title="Pencil color" style="display:none;">
+    <span id="inkSwatch"></span>
   </button>
   <button class="tool small" id="toolSave" title="Save to a slot">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
@@ -186,6 +203,7 @@
 <div class="toolbar primary">
   <button class="tool" id="toolDraw" title="Pencil (tap to switch to eraser)">
     <svg class="icon-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    <svg class="icon-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/><circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/></svg>
     <svg class="icon-erase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7l-4.5-4.5a2 2 0 0 1 0-2.8l9-9a2 2 0 0 1 2.8 0l6 6a2 2 0 0 1 0 2.8L13 20"/></svg>
   </button>
   <button class="tool" id="toolUndo" title="Undo">
@@ -207,7 +225,8 @@
   const canvas = document.getElementById('pad');
   const ctx = canvas.getContext('2d');
   const photoLayer = document.getElementById('photoLayer');
-  const photoInput = document.getElementById('photoInput');
+  const photoInputCamera = document.getElementById('photoInputCamera');
+  const photoInputGallery = document.getElementById('photoInputGallery');
   const cursorDot = document.getElementById('cursorDot');
   const toastEl = document.getElementById('toast');
 
@@ -228,21 +247,25 @@
   let cursor = { x: MARGIN, y: MARGIN + LINE_HEIGHT };
   let recognition = null;
 
-  // pinch/pan state (photo mode only)
-  let scale = 1, tx = 0, ty = 0;
-  let pointers = new Map();
-  let pinch = null;
+  // Photo mode only — theme black/white ink can disappear against a photo's
+  // own light/dark areas, so this is a small fixed high-visibility palette
+  // to cycle through instead of trying to auto-detect contrast.
+  const INK_PALETTE = ['#c6ff00', '#ff2d2d', '#f4f4f2', '#0b0b0c'];
+  let inkIndex = 0;
+  let customInk = null; // null = use theme ink (blank pad mode)
+
+  function currentInk(){ return customInk || themeColors().ink; }
+
+  function updateInkSwatch(){
+    document.getElementById('inkSwatch').style.background = customInk || '#888';
+    cursorDot.style.borderColor = customInk || 'var(--ink)';
+  }
 
   function themeColors(){
     return theme === 'dark'
       ? { bg: '#0b0b0c', ink: '#f4f4f2' }
       : { bg: '#f4f4f2', ink: '#0b0b0c' };
   }
-
-  function applyStageTransform(){
-    stageEl.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
-  }
-  function resetStageTransform(){ scale = 1; tx = 0; ty = 0; applyStageTransform(); }
 
   function setCanvasSize(preserve){
     const prevDataURL = preserve ? canvas.toDataURL() : null;
@@ -283,16 +306,18 @@
     ctx.putImageData(snap, 0, 0);
   }
 
+  const TOOL_TITLES = {
+    pencil: 'Pencil (tap for straight line)',
+    line: 'Straight line (tap for eraser)',
+    erase: 'Eraser (tap for pencil)'
+  };
+
   function setTool(name){
     tool = name;
     const btn = document.getElementById('toolDraw');
-    if (name === 'erase'){
-      btn.classList.add('erasing');
-      btn.title = 'Eraser (tap to switch to pencil)';
-    } else {
-      btn.classList.remove('erasing');
-      btn.title = 'Pencil (tap to switch to eraser)';
-    }
+    btn.classList.remove('mode-pencil', 'mode-line', 'mode-erase');
+    btn.classList.add('mode-' + name);
+    btn.title = TOOL_TITLES[name];
   }
 
   function toast(msg){
@@ -304,100 +329,72 @@
 
   // ---- drawing ----
   function pointerPos(e){
-    const rect = canvas.getBoundingClientRect();
-    return { x: (e.clientX - rect.left) / scale, y: (e.clientY - rect.top) / scale };
+    return { x: e.clientX, y: e.clientY };
   }
 
   function moveCursorIndicator(){
-    const rect = canvas.getBoundingClientRect();
-    cursorDot.style.left = (rect.left + cursor.x * scale) + 'px';
-    cursorDot.style.top = (rect.top + cursor.y * scale) + 'px';
+    cursorDot.style.left = cursor.x + 'px';
+    cursorDot.style.top = cursor.y + 'px';
   }
 
   function drawSegment(p0, p1){
-    const { ink } = themeColors();
+    const ink = currentInk();
     ctx.beginPath();
     ctx.moveTo(p0.x, p0.y);
     ctx.lineTo(p1.x, p1.y);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    if (tool === 'pencil'){
+    if (tool === 'erase'){
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = 22;
+    } else {
       ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = ink;
       ctx.lineWidth = 4;
-    } else {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineWidth = 22;
     }
     ctx.stroke();
   }
 
+  let lineStart = null;
+  let lineSnapshot = null;
+
   canvas.addEventListener('pointerdown', (e) => {
-    if (!photoMode){
-      // blank-pad mode: simple single-pointer path, unchanged behavior
-      const p = { x: e.clientX, y: e.clientY };
-      if (voiceMode){ cursor.x = p.x; cursor.y = p.y; moveCursorIndicator(); return; }
-      pushUndo();
-      drawing = true;
-      lastX = p.x; lastY = p.y;
-      canvas.setPointerCapture(e.pointerId);
-      return;
-    }
-    // photo mode: multi-touch aware (pinch/pan vs draw)
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 2){
-      drawing = false;
-      const pts = Array.from(pointers.values());
-      pinch = {
-        startDist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y),
-        startScale: scale, startTx: tx, startTy: ty,
-        startMid: { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 }
-      };
-      return;
-    }
-    if (pointers.size !== 1) return;
     const p = pointerPos(e);
     if (voiceMode){ cursor.x = p.x; cursor.y = p.y; moveCursorIndicator(); return; }
     pushUndo();
     drawing = true;
-    lastX = p.x; lastY = p.y;
+    if (tool === 'line'){
+      lineStart = p;
+      lineSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } else {
+      lastX = p.x; lastY = p.y;
+    }
     canvas.setPointerCapture(e.pointerId);
   });
 
   canvas.addEventListener('pointermove', (e) => {
-    if (!photoMode){
-      if (!drawing || voiceMode) return;
-      const p = { x: e.clientX, y: e.clientY };
-      drawSegment({x:lastX,y:lastY}, p);
-      lastX = p.x; lastY = p.y;
-      return;
-    }
-
-    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-    if (pinch && pointers.size === 2){
-      const pts = Array.from(pointers.values());
-      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      const m = { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 };
-      const newScale = Math.min(6, Math.max(0.5, pinch.startScale * (d / pinch.startDist)));
-      const stagePX = (pinch.startMid.x - pinch.startTx) / pinch.startScale;
-      const stagePY = (pinch.startMid.y - pinch.startTy) / pinch.startScale;
-      tx = m.x - stagePX * newScale;
-      ty = m.y - stagePY * newScale;
-      scale = newScale;
-      applyStageTransform();
-      return;
-    }
-
-    if (!drawing || voiceMode || pointers.size !== 1) return;
+    if (!drawing || voiceMode) return;
     const p = pointerPos(e);
+    if (tool === 'line'){
+      ctx.putImageData(lineSnapshot, 0, 0);
+      drawSegment(lineStart, p);
+      return;
+    }
     drawSegment({x:lastX,y:lastY}, p);
     lastX = p.x; lastY = p.y;
   });
 
   function endStroke(e){
-    if (photoMode && e && e.pointerId !== undefined) pointers.delete(e.pointerId);
-    if (pointers.size < 2) pinch = null;
+    if (tool === 'line' && drawing && lineStart){
+      if (e && e.type === 'pointerup'){
+        ctx.putImageData(lineSnapshot, 0, 0);
+        drawSegment(lineStart, pointerPos(e));
+      } else {
+        ctx.putImageData(lineSnapshot, 0, 0);
+      }
+      lineStart = null;
+      lineSnapshot = null;
+    }
     drawing = false;
   }
   canvas.addEventListener('pointerup', endStroke);
@@ -405,14 +402,21 @@
   canvas.addEventListener('pointerleave', endStroke);
 
   // ---- toolbar: draw tools ----
+  const TOOL_ORDER = ['pencil', 'line', 'erase'];
   document.getElementById('toolDraw').addEventListener('click', () => {
-    setTool(tool === 'pencil' ? 'erase' : 'pencil');
+    setTool(TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) % TOOL_ORDER.length]);
   });
   document.getElementById('toolUndo').addEventListener('click', undo);
 
   document.getElementById('toolTheme').addEventListener('click', () => {
     theme = theme === 'dark' ? 'light' : 'dark';
     applyThemeVars();
+  });
+
+  document.getElementById('toolInk').addEventListener('click', () => {
+    inkIndex = (inkIndex + 1) % INK_PALETTE.length;
+    customInk = INK_PALETTE[inkIndex];
+    updateInkSwatch();
   });
 
   document.getElementById('toolClear').addEventListener('click', () => {
@@ -424,30 +428,39 @@
       photoMode = false;
       photoLayer.style.display = 'none';
       photoLayer.removeAttribute('src');
-      resetStageTransform();
+      customInk = null;
+      document.getElementById('toolInk').style.display = 'none';
     }
   });
 
   // ---- photo mode ----
-  document.getElementById('toolPhoto').addEventListener('click', () => {
-    photoInput.click();
+  document.getElementById('toolCamera').addEventListener('click', () => {
+    photoInputCamera.click();
+  });
+  document.getElementById('toolGallery').addEventListener('click', () => {
+    photoInputGallery.click();
   });
 
-  photoInput.addEventListener('change', (e) => {
+  function handlePhotoFile(e){
     const file = e.target.files && e.target.files[0];
-    photoInput.value = '';
+    e.target.value = '';
     if (!file) return;
     const url = URL.createObjectURL(file);
     photoLayer.onload = () => {
       photoMode = true;
       photoLayer.style.display = 'block';
-      resetStageTransform();
+      inkIndex = 0;
+      customInk = INK_PALETTE[inkIndex];
+      document.getElementById('toolInk').style.display = 'flex';
+      updateInkSwatch();
       pushUndo();
       clearCanvas();
       toast('Photo loaded — draw and speak/scribble numbers on it');
     };
     photoLayer.src = url;
-  });
+  }
+  photoInputCamera.addEventListener('change', handlePhotoFile);
+  photoInputGallery.addEventListener('change', handlePhotoFile);
 
   // ---- save/load: 6 local slots (ink layer only, same in both modes) ----
   function slotKey(n){ return 'cutonce_slot_' + n; }
@@ -470,7 +483,7 @@
     const existing = localStorage.getItem(slotMetaKey(n));
     if (existing && !confirm('Slot ' + n + ' has "' + existing + '" — overwrite?')) return;
     try{
-      localStorage.setItem(slotKey(n), canvas.toDataURL());
+      localStorage.setItem(slotKey(n), compositedCanvas().toDataURL());
       localStorage.setItem(slotMetaKey(n), new Date().toLocaleString([], {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}));
       toast('Saved to slot ' + n);
     }catch(err){ toast('Save failed — storage full?'); }
@@ -501,20 +514,24 @@
     octx.drawImage(img, dx, dy, dw, dh);
   }
 
+  function compositedCanvas(){
+    const off = document.createElement('canvas');
+    off.width = canvas.width; off.height = canvas.height;
+    const octx = off.getContext('2d');
+    if (photoMode && photoLayer.complete && photoLayer.naturalWidth){
+      drawContainFit(octx, photoLayer, off.width, off.height);
+    } else {
+      const { bg } = themeColors();
+      octx.fillStyle = bg;
+      octx.fillRect(0, 0, off.width, off.height);
+    }
+    octx.drawImage(canvas, 0, 0);
+    return off;
+  }
+
   function compositeToBlob(){
     return new Promise((resolve) => {
-      const off = document.createElement('canvas');
-      off.width = canvas.width; off.height = canvas.height;
-      const octx = off.getContext('2d');
-      if (photoMode && photoLayer.complete && photoLayer.naturalWidth){
-        drawContainFit(octx, photoLayer, off.width, off.height);
-      } else {
-        const { bg } = themeColors();
-        octx.fillStyle = bg;
-        octx.fillRect(0, 0, off.width, off.height);
-      }
-      octx.drawImage(canvas, 0, 0);
-      off.toBlob((b) => resolve(b), 'image/png');
+      compositedCanvas().toBlob((b) => resolve(b), 'image/png');
     });
   }
 
@@ -645,7 +662,8 @@
       const text = formatMeasurement(raw);
       if (!text){ toast('Didn\u2019t catch a number'); return; }
       pushUndo();
-      const { ink } = themeColors();
+      const ink = currentInk();
+      ctx.globalCompositeOperation = 'source-over';
       ctx.font = '600 ' + FONT_SIZE + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       ctx.fillStyle = ink;
       ctx.fillText(text, cursor.x, cursor.y);
