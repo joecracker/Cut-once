@@ -1,0 +1,15 @@
+{
+  "name": "cut-once",
+  "compatibility_date": "2026-08-29",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    {
+      "pattern": "cutonce.crackerbox.app",
+      "custom_domain": true
+    }
+  ]
+}
