@@ -43,7 +43,7 @@
 - **UI Layout**:
   - Fixed `<canvas id="pad">` for drawing, overlays `<img id="photoLayer">` for photos.
   - Toolbars: `.toolbar.primary` (bottom) and `.toolbar.secondary` (top‑right).
-  - Voice markers (`#voiceMarks`, child `.cursor-indicator` dots) show tapped measurement spots.
+  - Voice markers (`#voiceMarks`, child `.cursor-indicator` dots) show tapped measurement spots; only the current one carries `.active` (pulsing), the rest are steady rings.
 - **Drawing Modes**:
   - Tool cycles: pencil → straight line → eraser.
   - Undo stack limited to 12 steps (local `undoStack` of ImageData).
@@ -53,7 +53,7 @@
 - **Voice Input**:
   - Tap mic, then tap each spot to measure; each tap drops a marker (`voicePoints`).
   - Speaking a number draws it centered on the current marker (`voicePointIdx`) at `VOICE_FONT_SIZE` (18px) and removes that marker; no cursor advance.
-  - Saying “next” advances to the next marker; past the last marker it does nothing. There is no “next line” command.
+  - Saying “next” advances to the next marker and moves the `.active` highlight (`syncActiveMark`); past the last marker it does nothing. There is no “next line” command.
   - Converts words to digits and formats fractions (e.g., “nine and a half” → “9½”).
 - **Photo Handling**:
   - Loaded via camera or gallery inputs; displayed in `#photoLayer`.

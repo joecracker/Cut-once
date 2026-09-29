@@ -41,11 +41,11 @@
     position:fixed; width:14px; height:14px;
     border:2px solid var(--ink); border-radius:50%;
     pointer-events:none; transform:translate(-50%,-50%);
-    opacity:0; transition:opacity .15s ease;
+    opacity:.45; transition:opacity .15s ease;
     box-shadow:0 0 0 3px rgba(0,0,0,.25);
     z-index:20;
   }
-  .cursor-indicator.show{ opacity:.85; animation:pulse 1.1s ease-in-out infinite; }
+  .cursor-indicator.active{ opacity:1; animation:pulse 1.1s ease-in-out infinite; }
   @keyframes pulse{ 0%,100%{ transform:translate(-50%,-50%) scale(1);} 50%{ transform:translate(-50%,-50%) scale(1.35);} }
   #voiceMarks{ position:fixed; inset:0; pointer-events:none; z-index:19; }
   #voiceMarks .cursor-indicator{ position:absolute; }
@@ -161,7 +161,7 @@
     <ul>
       <li>Pencil icon: freehand draw. Tap it to cycle to straight-line (drag point to point, it locks straight when you let go), tap again for eraser, tap again back to pencil.</li>
       <li>Curved arrow: undo, up to 12 steps back.</li>
-      <li>Mic: tap it, then tap each spot on the photo you want to measure. Say a number and it lands on the current spot; say "next" to move to the next spot. Tap the mic again to stop.</li>
+      <li>Mic: tap it, then tap each spot on the photo you want to measure. The lit circle is the current spot &mdash; say a number and it lands there; say "next" to light up the next spot. Tap the mic again to stop.</li>
       <li>Paper airplane: send this pad as an image — text it, save it, whatever’s fastest.</li>
       <li>Top-right, smaller icons: camera, gallery, flip black/white, save to a slot, load a slot, wipe.</li>
       <li>On a photo, a color dot also shows up top-right — tap it to cycle pencil color (green/red/white/black) so it stays visible against light or dark parts of the photo.</li>
@@ -337,12 +337,23 @@
   function addVoicePoint(x, y){
     const p = { x, y, done:false };
     const dot = document.createElement('div');
-    dot.className = 'cursor-indicator show';
+    dot.className = 'cursor-indicator';
+    dot.style.borderColor = currentInk();
     dot.style.left = x + 'px';
     dot.style.top = y + 'px';
     document.getElementById('voiceMarks').appendChild(dot);
     p.el = dot;
     voicePoints.push(p);
+    syncActiveMark();
+  }
+
+  // Exactly one marker is lit: the one the next spoken number lands on.
+  function syncActiveMark(){
+    const active = voicePoints[voicePointIdx];
+    for (const p of voicePoints){
+      if (!p.el) continue;
+      p.el.classList.toggle('active', p === active && !p.done);
+    }
   }
 
   function resetVoicePoints(){
@@ -674,7 +685,12 @@
       if (/^\s*next[.!]?\s*$/.test(lower)){
         if (voicePointIdx < voicePoints.length - 1){
           voicePointIdx++;
+          syncActiveMark();
           toast('Next spot');
+        } else if (voicePoints[voicePointIdx] && !voicePoints[voicePointIdx].done){
+          toast('Last spot');
+        } else {
+          toast('No more spots');
         }
         return;
       }
