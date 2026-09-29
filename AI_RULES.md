@@ -43,7 +43,7 @@
 - **UI Layout**:
   - Fixed `<canvas id="pad">` for drawing, overlays `<img id="photoLayer">` for photos.
   - Toolbars: `.toolbar.primary` (bottom) and `.toolbar.secondary` (top‑right).
-  - Cursor indicator (`#cursorDot`) shows current input position.
+  - Voice markers (`#voiceMarks`, child `.cursor-indicator` dots) show tapped measurement spots.
 - **Drawing Modes**:
   - Tool cycles: pencil → straight line → eraser.
   - Undo stack limited to 12 steps (local `undoStack` of ImageData).
@@ -51,7 +51,9 @@
   - Dark/Light toggle via CSS variables `--bg` and `--ink`.
   - Photo mode overrides ink with a high‑visibility palette (`#c6ff00`, `#ff2d2d`, `#f4f4f2`, `#0b0b0c`).
 - **Voice Input**:
-  - Listens for spoken numbers; supports phrases like “next line”.
+  - Tap mic, then tap each spot to measure; each tap drops a marker (`voicePoints`).
+  - Speaking a number draws it centered on the current marker (`voicePointIdx`) at `VOICE_FONT_SIZE` (18px) and removes that marker; no cursor advance.
+  - Saying “next” advances to the next marker; past the last marker it does nothing. There is no “next line” command.
   - Converts words to digits and formats fractions (e.g., “nine and a half” → “9½”).
 - **Photo Handling**:
   - Loaded via camera or gallery inputs; displayed in `#photoLayer`.

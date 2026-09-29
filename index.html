@@ -47,6 +47,8 @@
   }
   .cursor-indicator.show{ opacity:.85; animation:pulse 1.1s ease-in-out infinite; }
   @keyframes pulse{ 0%,100%{ transform:translate(-50%,-50%) scale(1);} 50%{ transform:translate(-50%,-50%) scale(1.35);} }
+  #voiceMarks{ position:fixed; inset:0; pointer-events:none; z-index:19; }
+  #voiceMarks .cursor-indicator{ position:absolute; }
 
   .toolbar{
     position:fixed;
@@ -159,7 +161,7 @@
     <ul>
       <li>Pencil icon: freehand draw. Tap it to cycle to straight-line (drag point to point, it locks straight when you let go), tap again for eraser, tap again back to pencil.</li>
       <li>Curved arrow: undo, up to 12 steps back.</li>
-      <li>Mic: tap to talk. Say a number, say "next line" to drop down a row. Tap again to stop.</li>
+      <li>Mic: tap it, then tap each spot on the photo you want to measure. Say a number and it lands on the current spot; say "next" to move to the next spot. Tap the mic again to stop.</li>
       <li>Paper airplane: send this pad as an image — text it, save it, whatever’s fastest.</li>
       <li>Top-right, smaller icons: camera, gallery, flip black/white, save to a slot, load a slot, wipe.</li>
       <li>On a photo, a color dot also shows up top-right — tap it to cycle pencil color (green/red/white/black) so it stays visible against light or dark parts of the photo.</li>
@@ -171,7 +173,7 @@
   <img id="photoLayer" alt="">
   <canvas id="pad"></canvas>
 </div>
-<div class="cursor-indicator" id="cursorDot"></div>
+<div id="voiceMarks"></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="photoInputCamera" accept="image/*" capture="environment" hidden>
 <input type="file" id="photoInputGallery" accept="image/*" hidden>
@@ -227,14 +229,12 @@
   const photoLayer = document.getElementById('photoLayer');
   const photoInputCamera = document.getElementById('photoInputCamera');
   const photoInputGallery = document.getElementById('photoInputGallery');
-  const cursorDot = document.getElementById('cursorDot');
   const toastEl = document.getElementById('toast');
 
   const MAX_UNDO = 12;
-  const LINE_HEIGHT = 32;
-  const MARGIN = 28;
   const SLOT_COUNT = 6;
   const FONT_SIZE = 22;
+  const VOICE_FONT_SIZE = 18;
 
   let dpr = Math.max(1, window.devicePixelRatio || 1);
   let tool = 'pencil'; // pencil | erase
@@ -244,8 +244,9 @@
   let theme = 'dark';
   let voiceMode = false;
   let photoMode = false;
-  let cursor = { x: MARGIN, y: MARGIN + LINE_HEIGHT };
   let recognition = null;
+  let voicePoints = [];   // spots tapped during voice mode, in the order you place them
+  let voicePointIdx = 0;  // which spot the next spoken measurement lands on
 
   // Photo mode only — theme black/white ink can disappear against a photo's
   // own light/dark areas, so this is a small fixed high-visibility palette
@@ -258,7 +259,6 @@
 
   function updateInkSwatch(){
     document.getElementById('inkSwatch').style.background = customInk || '#888';
-    cursorDot.style.borderColor = customInk || 'var(--ink)';
   }
 
   function themeColors(){
@@ -332,9 +332,23 @@
     return { x: e.clientX, y: e.clientY };
   }
 
-  function moveCursorIndicator(){
-    cursorDot.style.left = cursor.x + 'px';
-    cursorDot.style.top = cursor.y + 'px';
+  // Drops a marker where you tap while the mic is on. Each one waits its turn
+  // to receive a spoken measurement; "next" moves down the list.
+  function addVoicePoint(x, y){
+    const p = { x, y, done:false };
+    const dot = document.createElement('div');
+    dot.className = 'cursor-indicator show';
+    dot.style.left = x + 'px';
+    dot.style.top = y + 'px';
+    document.getElementById('voiceMarks').appendChild(dot);
+    p.el = dot;
+    voicePoints.push(p);
+  }
+
+  function resetVoicePoints(){
+    voicePoints = [];
+    voicePointIdx = 0;
+    document.getElementById('voiceMarks').innerHTML = '';
   }
 
   function drawSegment(p0, p1){
@@ -360,7 +374,7 @@
 
   canvas.addEventListener('pointerdown', (e) => {
     const p = pointerPos(e);
-    if (voiceMode){ cursor.x = p.x; cursor.y = p.y; moveCursorIndicator(); return; }
+    if (voiceMode){ addVoicePoint(p.x, p.y); return; }
     pushUndo();
     drawing = true;
     if (tool === 'line'){
@@ -424,6 +438,7 @@
     if (!confirm(msg)) return;
     pushUndo();
     clearCanvas();
+    resetVoicePoints();
     if (photoMode){
       photoMode = false;
       photoLayer.style.display = 'none';
@@ -455,7 +470,8 @@
       updateInkSwatch();
       pushUndo();
       clearCanvas();
-      toast('Photo loaded — draw and speak/scribble numbers on it');
+      resetVoicePoints();
+      toast('Photo loaded — tap the spots you want to measure, then say each number');
     };
     photoLayer.src = url;
   }
@@ -499,6 +515,7 @@
     pushUndo();
     const cssW = window.innerWidth, cssH = window.innerHeight;
     clearCanvas();
+    resetVoicePoints();
     const img = new Image();
     img.onload = () => { ctx.drawImage(img, 0, 0, cssW, cssH); toast('Loaded slot ' + n); };
     img.src = data;
@@ -652,10 +669,23 @@
       if (!raw) return;
       const lower = raw.toLowerCase();
 
-      if (lower.includes('next line')){
-        cursor.x = MARGIN;
-        cursor.y += LINE_HEIGHT;
-        moveCursorIndicator();
+      // "next" moves on to the next spot you tapped. Past the last spot it
+      // does nothing, so a stray "next" never resets the sequence.
+      if (/^\s*next[.!]?\s*$/.test(lower)){
+        if (voicePointIdx < voicePoints.length - 1){
+          voicePointIdx++;
+          toast('Next spot');
+        }
+        return;
+      }
+
+      if (!voicePoints.length){
+        toast('Tap a spot first, then speak the number');
+        return;
+      }
+      const p = voicePoints[voicePointIdx];
+      if (p.done){
+        toast('That spot is labeled \u2014 say "next" for the next one');
         return;
       }
 
@@ -664,12 +694,16 @@
       pushUndo();
       const ink = currentInk();
       ctx.globalCompositeOperation = 'source-over';
-      ctx.font = '600 ' + FONT_SIZE + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.font = '600 ' + VOICE_FONT_SIZE + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
       ctx.fillStyle = ink;
-      ctx.fillText(text, cursor.x, cursor.y);
-      const w = ctx.measureText(text).width;
-      cursor.x += w + 24;
-      moveCursorIndicator();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, p.x, p.y);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+      p.done = true;
+      if (p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
+      toast(voicePointIdx === voicePoints.length - 1 ? 'Last spot labeled' : 'Say "next" when ready');
     };
 
     recognition.onerror = (e) => {
@@ -698,15 +732,13 @@
   function startVoice(){
     if (!SR || !isSecure) return;
     voiceMode = true;
+    resetVoicePoints();
     micBtn.classList.add('listening');
-    cursorDot.classList.add('show');
-    moveCursorIndicator();
     try {
       recognition.start();
     } catch(err){
       voiceMode = false;
       micBtn.classList.remove('listening');
-      cursorDot.classList.remove('show');
       toast('Could not start mic');
     }
   }
@@ -714,7 +746,6 @@
   function stopVoice(){
     voiceMode = false;
     micBtn.classList.remove('listening');
-    cursorDot.classList.remove('show');
     if (recognition){ try { recognition.stop(); } catch(err){} }
   }
 
