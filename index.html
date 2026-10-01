@@ -337,8 +337,9 @@
 
   let audioCtx = null;
   let vibe = localStorage.getItem('cutonce_vibrate') === '1';
-  let autoRestarts = 0;      // silent silence-timeout restarts since last real result
+  let autoRestarts = 0;      // real-error restarts since last real result (silence is free)
   const MAX_AUTO_RESTARTS = 8;
+  let silenceRestart = false; // last engine error was plain silence, not a failure
   let lastNextAt = 0;        // debounce for double-"next"
 
   // ---- native bridge (Capacitor Android build only) ----
@@ -1058,7 +1059,11 @@
     t = t.replace(/\bx\b/g, ' × ');
     t = t.replace(/\s*point\s*/g, '.');
 
-    const wordFrac = /\b(?:and\s+)?(?:(a|an|one|\d{1,2})\s+)?(halves|half|quarters|quarter|eighths|eighth|sixteenths|sixteenth|thirty-seconds|thirty-second|thirty seconds|thirty second)\b/g;
+    // wordsToDigits() runs first and turns "thirty" into 30, so the 32nds
+    // alias must match the DIGIT form ("30 seconds", "32 seconds") — the word
+    // form can never survive that far. 30ths isn't a trade fraction, so both
+    // spellings mean 32nds and fall through to the final else below.
+    const wordFrac = /\b(?:and\s+)?(?:(a|an|one|\d{1,2})\s+)?(halves|half|quarters|quarter|eighths|eighth|sixteenths|sixteenth|(?:30|32)\s+seconds?)\b/g;
     t = t.replace(wordFrac, (m, numGroup, unitGroup) => {
       let denom;
       if (unitGroup.startsWith('half')) denom = 2;
@@ -1164,6 +1169,7 @@
    * deliberately translates Android's numeric errors into Web Speech ones.
    */
   function handleVoiceError(code){
+    silenceRestart = (code === 'no-speech');
     if (code === 'not-allowed' || code === 'service-not-allowed'){
       toast('Mic permission blocked');
       return true;
@@ -1267,13 +1273,18 @@
     recognition.onend = () => {
       if (!voiceMode) return;
       // Chrome ends recognition after a couple seconds of silence; restarting
-      // is what keeps it "always on". But bail out instead of looping forever
-      // when restarts keep failing (dead signal, mic grabbed by another app).
-      if (autoRestarts >= MAX_AUTO_RESTARTS){
-        giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
-        return;
+      // is what keeps it "always on". Silence costs nothing; bail out instead
+      // of looping forever when restarts keep failing (dead signal, mic
+      // grabbed by another app).
+      if (silenceRestart){
+        silenceRestart = false;
+      } else {
+        if (autoRestarts >= MAX_AUTO_RESTARTS){
+          giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
+          return;
+        }
+        autoRestarts++;
       }
-      autoRestarts++;
       try { recognition.start(); } catch(err){ /* already running */ }
     };
   }
@@ -1300,6 +1311,9 @@
         continue;                                // straight back into listening
       }
       if (handleVoiceError((res && res.error) || 'client')){ stopVoice(); return; }
+      // Plain silence means you're walking between marks, not that anything
+      // broke — re-arm straight away and leave the failure budget alone.
+      if (silenceRestart){ silenceRestart = false; continue; }
       if (autoRestarts >= MAX_AUTO_RESTARTS){
         giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
         return;

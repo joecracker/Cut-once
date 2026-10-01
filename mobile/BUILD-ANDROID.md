@@ -93,7 +93,9 @@ isn't bundled. The bridge itself is injected before any page script runs, so
 `listenOnce()` resolves **once per phrase** — `SpeechRecognizer` is not built
 for continuous use. `index.html` owns the restart cadence in `runNativeLoop()`,
 reusing the same `autoRestarts` / `MAX_AUTO_RESTARTS` budget as the web engine,
-with a `NATIVE_RETRY_MS` pause so a failing recognizer can't hot-loop.
+with a `NATIVE_RETRY_MS` pause so a failing recognizer can't hot-loop. Plain
+silence (`no-speech`) restarts for free and never touches that budget — walking
+between marks is not a failure; only real errors count against it.
 
 The plugin translates Android's numeric errors into Web Speech code names
 (`network`, `no-speech`, `audio-capture`, `not-allowed`, `busy`), so both
