@@ -46,6 +46,8 @@
     z-index:20;
   }
   .cursor-indicator.active{ opacity:1; animation:pulse 1.1s ease-in-out infinite; }
+  /* a labeled spot you've tapped to re-aim / move: solid ring, no pulse */
+  .cursor-indicator.editing{ opacity:1; animation:none; border-width:3px; }
   @keyframes pulse{ 0%,100%{ transform:translate(-50%,-50%) scale(1);} 50%{ transform:translate(-50%,-50%) scale(1.35);} }
   #voiceMarks{ position:fixed; inset:0; pointer-events:none; z-index:19; }
   #voiceMarks .cursor-indicator{ position:absolute; }
@@ -83,8 +85,9 @@
   #toolDraw svg{ display:none; }
   #toolDraw.mode-pencil .icon-pencil{ display:block; }
   #toolDraw.mode-line .icon-line{ display:block; }
+  #toolDraw.mode-arrow .icon-arrow{ display:block; }
   #toolDraw.mode-erase .icon-erase{ display:block; }
-  #toolDraw.mode-line, #toolDraw.mode-erase{ background:var(--pill-active); color:var(--pill-active-ink); }
+  #toolDraw.mode-line, #toolDraw.mode-arrow, #toolDraw.mode-erase{ background:var(--pill-active); color:var(--pill-active-ink); }
   button.tool.mic.listening{ background:var(--danger); color:#fff; }
   button.tool.mic.listening svg{ animation:micpulse 1s ease-in-out infinite; }
   button.tool.mic.dead{ background:rgba(255,255,255,0.06); color:rgba(244,244,242,0.35); }
@@ -216,9 +219,9 @@
     </div>
     <h3>How this works</h3>
     <ul>
-      <li>Pencil: freehand draw. Tap again for straight line, again for eraser, again back to pencil.</li>
+      <li>Pencil: freehand draw. Tap again for straight line, again for arrow, again for eraser, again back to pencil.</li>
       <li>Curved arrow: undo your last mark.</li>
-      <li>Mic: tap it, then tap each spot you want to measure. The pulsing circle is where your next spoken number lands; say "next" to move to the next circle. Tap the mic again to stop.</li>
+      <li>Mic: tap it, then tap each spot you want to measure. The pulsing circle is where your next spoken number lands; say "next" to move to the next circle. Tap a circle to re-aim it (or drag it to move it); say "back" to undo the last number. Tap the mic again to stop.</li>
       <li>Paper airplane: share this pad as an image. Down-arrow: save the image straight to your phone.</li>
       <li>Save / folder: your last six pads, newest first. The oldest falls off when you save a seventh.</li>
       <li>Top right also has camera, gallery, pencil color (on a photo), and wipe.</li>
@@ -261,6 +264,7 @@
   <button class="tool" id="toolDraw" title="Pencil (tap to switch to eraser)">
     <svg class="icon-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
     <svg class="icon-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/><circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/></svg>
+    <svg class="icon-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="7" y2="17"/><polyline points="15 5 19 5 19 9"/><circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/></svg>
     <svg class="icon-erase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7l-4.5-4.5a2 2 0 0 1 0-2.8l9-9a2 2 0 0 1 2.8 0l6 6a2 2 0 0 1 0 2.8L13 20"/></svg>
   </button>
   <button class="tool" id="toolUndo" title="Undo">
@@ -310,16 +314,13 @@
   const photoInputGallery = document.getElementById('photoInputGallery');
   const toastEl = document.getElementById('toast');
 
-  const MAX_UNDO = 12;
   const SLOT_COUNT = 6;
-  const FONT_SIZE = 22;
   const VOICE_FONT_SIZE = 18;
 
   let dpr = Math.max(1, window.devicePixelRatio || 1);
-  let tool = 'pencil'; // pencil | erase
+  let tool = 'pencil'; // pencil | line | arrow | erase
   let drawing = false;
   let lastX = 0, lastY = 0;
-  let undoStack = [];
   let theme = 'dark';
   let voiceMode = false;
   let photoMode = false;
@@ -375,19 +376,14 @@
       : { bg: '#f4f4f2', ink: '#0b0b0c' };
   }
 
-  function setCanvasSize(preserve){
-    const prevDataURL = preserve ? canvas.toDataURL() : null;
+  function setCanvasSize(){
     const cssW = window.innerWidth, cssH = window.innerHeight;
     dpr = Math.max(1, window.devicePixelRatio || 1);
     canvas.width = cssW * dpr;
     canvas.height = cssH * dpr;
     ctx.setTransform(dpr,0,0,dpr,0,0);
-    clearCanvas();
-    if (prevDataURL){
-      const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0, cssW, cssH);
-      img.src = prevDataURL;
-    }
+    render();
+    syncRings();
   }
 
   // Canvas stays transparent — the page bg (blank mode) or the photo layer
@@ -402,28 +398,147 @@
     document.documentElement.style.setProperty('--ink', ink);
   }
 
-  function pushUndo(){
-    const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    undoStack.push(snap);
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
+  // ---- vector ink: every mark is an instruction, not pixels ----
+  // Ops are stored NORMALIZED to the current "frame" so they survive resize
+  // and rotation. In photo mode the frame is the photo's contain-fit rect, so
+  // ink stays glued to the photo; in blank mode it's the whole viewport.
+  let ops = [];          // drawing instructions, oldest first
+  let baseImage = null;  // a loaded pad raster that ops repaint on top of
+
+  function photoFrame(){
+    const cssW = window.innerWidth, cssH = window.innerHeight;
+    if (photoMode && photoLayer.complete && photoLayer.naturalWidth){
+      const ir = photoLayer.naturalWidth / photoLayer.naturalHeight;
+      const br = cssW / cssH;
+      let dw, dh, dx, dy;
+      if (ir > br){ dw = cssW; dh = cssW / ir; dx = 0; dy = (cssH - dh) / 2; }
+      else { dh = cssH; dw = cssH * ir; dy = 0; dx = (cssW - dw) / 2; }
+      return { dx, dy, dw, dh };
+    }
+    return { dx:0, dy:0, dw:cssW, dh:cssH };
+  }
+  function toNorm(x, y){
+    const f = photoFrame();
+    return { nx:(x - f.dx) / f.dw, ny:(y - f.dy) / f.dh };
+  }
+  function toScreen(nx, ny){
+    const f = photoFrame();
+    return { x: f.dx + nx * f.dw, y: f.dy + ny * f.dh };
+  }
+
+  // keep a label fully on-canvas: dead-center unless it would clip an edge
+  function clampTextX(text, x){
+    ctx.font = '600 ' + VOICE_FONT_SIZE + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    const half = ctx.measureText(text).width / 2;
+    const cssW = window.innerWidth;
+    let clamped = false;
+    if (x - half < 6){ x = 6 + half; clamped = true; }
+    if (x + half > cssW - 6){ x = cssW - 6 - half; clamped = true; }
+    return { x, clamped };
+  }
+
+  function replayOp(op){
+    ctx.globalCompositeOperation = 'source-over';
+    if (op.kind === 'stroke'){
+      ctx.beginPath();
+      const first = toScreen(op.pts[0].nx, op.pts[0].ny);
+      ctx.moveTo(first.x, first.y);
+      if (op.pts.length === 1) ctx.lineTo(first.x + 0.01, first.y + 0.01); // a tap = a dot
+      for (let i = 1; i < op.pts.length; i++){
+        const q = toScreen(op.pts[i].nx, op.pts[i].ny);
+        ctx.lineTo(q.x, q.y);
+      }
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (op.erase){ ctx.globalCompositeOperation = 'destination-out'; ctx.lineWidth = 22; }
+      else { ctx.strokeStyle = op.ink; ctx.lineWidth = 4; }
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    else if (op.kind === 'line' || op.kind === 'arrow'){
+      const a = toScreen(op.a.nx, op.a.ny), b = toScreen(op.b.nx, op.b.ny);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = op.ink; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.stroke();
+      if (op.kind === 'arrow'){
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        const len = 14;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - len * Math.cos(ang - 0.5), b.y - len * Math.sin(ang - 0.5));
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - len * Math.cos(ang + 0.5), b.y - len * Math.sin(ang + 0.5));
+        ctx.stroke();
+      }
+    }
+    else if (op.kind === 'text'){
+      const q = toScreen(op.nx, op.ny);
+      const c = clampTextX(op.text, q.x);
+      ctx.font = '600 ' + op.size + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.fillStyle = op.ink;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(op.text, c.x, q.y);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+  }
+
+  function render(){
+    clearCanvas();
+    ctx.globalCompositeOperation = 'source-over';
+    if (baseImage){
+      ctx.drawImage(baseImage, 0, 0, window.innerWidth, window.innerHeight);
+    }
+    for (const op of ops) replayOp(op);
+  }
+
+  function pushOp(op){
+    ops.push(op);
+    if (ops.length > 400) ops.shift();
+  }
+
+  // Undo is now voice-aware: popping a measurement revives its circle and
+  // re-aims the mic at it, instead of leaving orphaned voice state behind.
+  function revivePoint(op){
+    if (op.kind !== 'text' || op.pointIndex == null) return;
+    const p = voicePoints[op.pointIndex];
+    if (!p) return;
+    p.done = false;
+    p.editing = false;
+    ensureRing(p);
+    voicePointIdx = op.pointIndex;
+    syncActiveMark();
   }
 
   function undo(){
-    if (!undoStack.length) return;
-    const snap = undoStack.pop();
-    ctx.putImageData(snap, 0, 0);
+    const op = ops.pop();
+    if (!op) return;
+    revivePoint(op);
+    render();
+  }
+
+  function undoLastLabel(){
+    for (let i = ops.length - 1; i >= 0; i--){
+      if (ops[i].kind === 'text'){
+        const op = ops.splice(i, 1)[0];
+        revivePoint(op);
+        render();
+        return true;
+      }
+    }
+    return false;
   }
 
   const TOOL_TITLES = {
     pencil: 'Pencil (tap for straight line)',
-    line: 'Straight line (tap for eraser)',
+    line: 'Straight line (tap for arrow)',
+    arrow: 'Arrow (tap for eraser)',
     erase: 'Eraser (tap for pencil)'
   };
 
   function setTool(name){
     tool = name;
     const btn = document.getElementById('toolDraw');
-    btn.classList.remove('mode-pencil', 'mode-line', 'mode-erase');
+    btn.classList.remove('mode-pencil', 'mode-line', 'mode-arrow', 'mode-erase');
     btn.classList.add('mode-' + name);
     btn.title = TOOL_TITLES[name];
   }
@@ -440,21 +555,46 @@
     return { x: e.clientX, y: e.clientY };
   }
 
-  // Drops a marker where you tap while the mic is on. Each one waits its turn
-  // to receive a spoken measurement; "next" moves down the list.
-  function addVoicePoint(x, y){
-    const p = { x, y, done:false };
+  // Markers live in normalized coords too, so their rings stay glued to the
+  // photo through resize/rotation just like the ink does.
+  function positionRing(p){
+    if (!p.el) return;
+    const q = toScreen(p.nx, p.ny);
+    p.el.style.left = q.x + 'px';
+    p.el.style.top = q.y + 'px';
+  }
+  function syncRings(){ for (const p of voicePoints) positionRing(p); }
+  function ensureRing(p){
+    if (p.el && p.el.parentNode) return;
     const dot = document.createElement('div');
     dot.className = 'cursor-indicator';
     dot.style.borderColor = currentInk();
-    dot.style.left = x + 'px';
-    dot.style.top = y + 'px';
     document.getElementById('voiceMarks').appendChild(dot);
     p.el = dot;
+    positionRing(p);
+  }
+
+  // Drops a marker where you tap while the mic is on. Each one waits its turn
+  // to receive a spoken measurement; "next" moves down the list.
+  function addVoicePoint(x, y){
+    const n = toNorm(x, y);
+    const p = { nx:n.nx, ny:n.ny, done:false, editing:false };
     voicePoints.push(p);
+    ensureRing(p);
     syncActiveMark();
     sfxMarker();
     buzz(30);
+  }
+
+  // Tapping an existing circle re-aims the mic at it (and flags a labeled one
+  // for replace/move) instead of dropping a brand-new circle on top of it.
+  function hitVoicePoint(x, y){
+    for (let i = voicePoints.length - 1; i >= 0; i--){
+      const q = toScreen(voicePoints[i].nx, voicePoints[i].ny);
+      const d = Math.hypot(q.x - x, q.y - y);
+      if (d <= 24) return { p: voicePoints[i], idx: i };
+    }
+    return null;
   }
 
   // Exactly one marker is lit: the one the next spoken number lands on.
@@ -463,6 +603,7 @@
     for (const p of voicePoints){
       if (!p.el) continue;
       p.el.classList.toggle('active', p === active && !p.done);
+      p.el.classList.toggle('editing', p === active && p.done && !!p.editing);
     }
   }
 
@@ -472,72 +613,124 @@
     document.getElementById('voiceMarks').innerHTML = '';
   }
 
-  function drawSegment(p0, p1){
-    const ink = currentInk();
+  function liveSegment(p0, p1, erase){
     ctx.beginPath();
     ctx.moveTo(p0.x, p0.y);
     ctx.lineTo(p1.x, p1.y);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    if (tool === 'erase'){
+    if (erase){
       ctx.globalCompositeOperation = 'destination-out';
       ctx.lineWidth = 22;
     } else {
       ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = ink;
+      ctx.strokeStyle = currentInk();
       ctx.lineWidth = 4;
     }
     ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function liveLinePreview(a, b, kind){
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = currentInk(); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.stroke();
+    if (kind === 'arrow'){
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const len = 14;
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x - len * Math.cos(ang - 0.5), b.y - len * Math.sin(ang - 0.5));
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x - len * Math.cos(ang + 0.5), b.y - len * Math.sin(ang + 0.5));
+      ctx.stroke();
+    }
   }
 
   let lineStart = null;
-  let lineSnapshot = null;
+  let strokePts = null;
+  let dragPoint = null;
+
+  function moveLabelWithPoint(p){
+    const idx = voicePoints.indexOf(p);
+    for (const op of ops){
+      if (op.kind === 'text' && op.pointIndex === idx){ op.nx = p.nx; op.ny = p.ny; }
+    }
+    render();
+  }
 
   canvas.addEventListener('pointerdown', (e) => {
     const p = pointerPos(e);
-    if (voiceMode){ addVoicePoint(p.x, p.y); return; }
-    pushUndo();
+    if (voiceMode){
+      const hit = hitVoicePoint(p.x, p.y);
+      if (hit){
+        voicePointIdx = hit.idx;
+        if (hit.p.done) hit.p.editing = true; // labeled spot: re-aim / move / replace
+        ensureRing(hit.p);                    // labeled spots have no ring yet
+        dragPoint = hit.p;
+        syncActiveMark();
+        canvas.setPointerCapture(e.pointerId);
+        return;
+      }
+      addVoicePoint(p.x, p.y);
+      return;
+    }
     drawing = true;
-    if (tool === 'line'){
+    if (tool === 'line' || tool === 'arrow'){
       lineStart = p;
-      lineSnapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      render();
     } else {
+      strokePts = [p];
       lastX = p.x; lastY = p.y;
     }
     canvas.setPointerCapture(e.pointerId);
   });
 
   canvas.addEventListener('pointermove', (e) => {
-    if (!drawing || voiceMode) return;
     const p = pointerPos(e);
-    if (tool === 'line'){
-      ctx.putImageData(lineSnapshot, 0, 0);
-      drawSegment(lineStart, p);
+    if (voiceMode && dragPoint){
+      const n = toNorm(p.x, p.y);
+      dragPoint.nx = n.nx; dragPoint.ny = n.ny;
+      positionRing(dragPoint);
+      moveLabelWithPoint(dragPoint);
       return;
     }
-    drawSegment({x:lastX,y:lastY}, p);
+    if (!drawing || voiceMode) return;
+    if (tool === 'line' || tool === 'arrow'){
+      render();
+      liveLinePreview(lineStart, p, tool);
+      return;
+    }
+    liveSegment({x:lastX,y:lastY}, p, tool === 'erase');
+    strokePts.push(p);
     lastX = p.x; lastY = p.y;
   });
 
   function endStroke(e){
-    if (tool === 'line' && drawing && lineStart){
-      if (e && e.type === 'pointerup'){
-        ctx.putImageData(lineSnapshot, 0, 0);
-        drawSegment(lineStart, pointerPos(e));
-      } else {
-        ctx.putImageData(lineSnapshot, 0, 0);
-      }
-      lineStart = null;
-      lineSnapshot = null;
-    }
+    if (voiceMode){ dragPoint = null; return; }
+    if (!drawing) return;
     drawing = false;
+    const p = e ? pointerPos(e) : { x:lastX, y:lastY };
+    if (tool === 'line' || tool === 'arrow'){
+      if (lineStart){
+        pushOp({ kind:tool, a:toNorm(lineStart.x, lineStart.y), b:toNorm(p.x, p.y), ink:currentInk() });
+        lineStart = null;
+        render();
+      }
+      return;
+    }
+    if (strokePts && strokePts.length){
+      pushOp({ kind:'stroke', pts:strokePts.map(q => toNorm(q.x, q.y)), ink:currentInk(), erase:tool === 'erase' });
+      strokePts = null;
+      render();
+    }
   }
   canvas.addEventListener('pointerup', endStroke);
   canvas.addEventListener('pointercancel', endStroke);
   canvas.addEventListener('pointerleave', endStroke);
 
   // ---- toolbar: draw tools ----
-  const TOOL_ORDER = ['pencil', 'line', 'erase'];
+  const TOOL_ORDER = ['pencil', 'line', 'arrow', 'erase'];
   document.getElementById('toolDraw').addEventListener('click', () => {
     setTool(TOOL_ORDER[(TOOL_ORDER.indexOf(tool) + 1) % TOOL_ORDER.length]);
   });
@@ -568,8 +761,9 @@
   document.getElementById('toolClear').addEventListener('click', () => {
     const msg = photoMode ? 'Remove photo and start over?' : 'Wipe the pad?';
     if (!confirm(msg)) return;
-    pushUndo();
-    clearCanvas();
+    ops = [];
+    baseImage = null;
+    render();
     resetVoicePoints();
     if (photoMode){
       photoMode = false;
@@ -600,8 +794,9 @@
       customInk = INK_PALETTE[inkIndex];
       document.getElementById('toolInk').style.display = 'flex';
       updateInkSwatch();
-      pushUndo();
-      clearCanvas();
+      ops = [];
+      baseImage = null;
+      render();
       resetVoicePoints();
       toast('Photo loaded — tap the spots you want to measure, then say each number');
     };
@@ -659,12 +854,10 @@
   function loadSlot(n){
     const data = localStorage.getItem(slotKey(n));
     if (!data){ toast('That pad is empty'); return; }
-    pushUndo();
-    const cssW = window.innerWidth, cssH = window.innerHeight;
-    clearCanvas();
     resetVoicePoints();
+    ops = [];
     const img = new Image();
-    img.onload = () => { ctx.drawImage(img, 0, 0, cssW, cssH); toast('Loaded pad'); };
+    img.onload = () => { baseImage = img; render(); toast('Loaded pad'); };
     img.src = data;
   }
 
@@ -886,39 +1079,35 @@
         return;
       }
 
+      // "back" removes the most recent spoken label and re-aims at its spot
+      if (/^\s*back[.!]?\s*$/.test(lower)){
+        if (undoLastLabel()){ sfxNext(); toast('Back one'); }
+        else toast('Nothing to back up');
+        return;
+      }
+
       if (!voicePoints.length){
         toast('Tap a spot first, then speak the number');
         return;
       }
       const p = voicePoints[voicePointIdx];
-      if (p.done){
-        toast('That spot is labeled \u2014 say "next" for the next one');
+      if (p.done && !p.editing){
+        toast('That spot is labeled \u2014 tap it to change it, or say "next"');
         return;
       }
 
       const text = formatMeasurement(raw);
       if (!text){ toast('Didn\u2019t catch a number'); return; }
-      pushUndo();
-      const ink = currentInk();
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.font = '600 ' + VOICE_FONT_SIZE + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-      // edge-aware clamp: stay dead-center on the spot unless the label would
-      // run off the canvas, in which case slide just enough to stay visible
-      const tw = ctx.measureText(text).width;
-      const cssW = window.innerWidth;
-      const half = tw / 2;
-      let tx = p.x;
-      let clamped = false;
-      if (tx - half < 6){ tx = 6 + half; clamped = true; }
-      if (tx + half > cssW - 6){ tx = cssW - 6 - half; clamped = true; }
-      ctx.fillStyle = ink;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, tx, p.y);
-      ctx.textAlign = 'start';
-      ctx.textBaseline = 'alphabetic';
+      // re-speaking a selected spot replaces its old label instead of stacking
+      if (p.done){
+        ops = ops.filter(op => !(op.kind === 'text' && op.pointIndex === voicePointIdx));
+      }
+      const clamped = clampTextX(text, toScreen(p.nx, p.ny).x).clamped;
+      pushOp({ kind:'text', nx:p.nx, ny:p.ny, text, ink:currentInk(), size:VOICE_FONT_SIZE, pointIndex:voicePointIdx });
       p.done = true;
-      if (p.el && p.el.parentNode) p.el.parentNode.removeChild(p.el);
+      p.editing = false;
+      if (p.el && p.el.parentNode){ p.el.parentNode.removeChild(p.el); p.el = null; }
+      render();
       sfxLanded(clamped);
       buzz(clamped ? [40, 40, 40] : 60);
       toast(voicePointIdx === voicePoints.length - 1 ? 'Last spot labeled' : 'Say "next" when ready');
@@ -1006,9 +1195,9 @@
 
   // ---- first-run walkthrough (coach marks over the real buttons) ----
   const WALK_STEPS = [
-    { sel:'#toolDraw', text:'Draw tool. Tap to cycle pencil, straight line, eraser.' },
+    { sel:'#toolDraw', text:'Draw tool. Tap to cycle pencil, straight line, arrow, eraser.' },
     { sel:'#toolUndo', text:'Undo your last mark.' },
-    { sel:'#toolMic', text:'The star of the show. Tap it, then tap each spot you want to measure. Say a number and it lands on the pulsing circle; say "next" for the next circle.' },
+    { sel:'#toolMic', text:'The star of the show. Tap it, then tap each spot you want to measure. Say a number and it lands on the pulsing circle; say "next" for the next circle. Tap a circle to re-aim or drag it to move; say "back" to undo a number.' },
     { sel:'#toolSend', text:'Share this pad as an image — text it to the guy in the garage.' },
     { sel:'#toolDownload', text:'Save the image straight to your phone.' },
     { sel:'#toolCamera', text:'Snap a photo to measure on top of.' },
@@ -1057,8 +1246,8 @@
   setTool('pencil');
   applyThemeVars();
   syncSettingLabels();
-  setCanvasSize(false);
-  window.addEventListener('resize', () => setCanvasSize(true));
+  setCanvasSize();
+  window.addEventListener('resize', () => setCanvasSize());
   document.addEventListener('touchmove', (e) => e.preventDefault(), { passive:false });
 })();
 </script>
