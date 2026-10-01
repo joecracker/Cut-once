@@ -1,2 +1,8 @@
 node_modules/
 www/
+
+# adb logcat dumps. The original was ~148 MiB and got committed four times
+# (518 MiB of blobs), which GitHub rejects outright over 100 MiB per file.
+# Stripped from history with git-filter-repo; do not re-add.
+logcat.txt
+*.log
