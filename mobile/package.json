@@ -1,0 +1,22 @@
+{
+  "name": "cut-once-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native Android wrapper for Cut Once — offline on-device voice measurements",
+  "scripts": {
+    "sync:web": "node scripts/sync-www.mjs",
+    "presync": "node scripts/sync-www.mjs",
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "clean:web": "node scripts/sync-www.mjs --clean"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/share": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2"
+  }
+}

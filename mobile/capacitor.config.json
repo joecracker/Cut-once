@@ -1,0 +1,15 @@
+{
+  "appId": "app.crackerbox.cutonce",
+  "appName": "Cut Once",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 300,
+      "backgroundColor": "#0b0b0c",
+      "showSpinner": false
+    }
+  }
+}
