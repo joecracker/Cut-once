@@ -4,3 +4,4 @@ wrangler.json
 node_modules
 *.md
 .wrangler
+mobile

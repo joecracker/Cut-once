@@ -341,6 +341,19 @@
   const MAX_AUTO_RESTARTS = 8;
   let lastNextAt = 0;        // debounce for double-"next"
 
+  // ---- native bridge (Capacitor Android build only) ----
+  // window.Capacitor is injected into the WebView before any page script runs,
+  // so this is either the real bridge or undefined on the web deploy. Note that
+  // registerPlugin() lives in @capacitor/core, which we deliberately don't
+  // bundle — the injected nativePromise() reaches the same plugins directly.
+  const Cap = window.Capacitor;
+  let nativeOk = false;      // the CutOnce plugin answered check()
+  let nativeSpeech = false;  // and a recognizer is actually installed
+
+  function nativeCall(plugin, method, opts){
+    return Cap.nativePromise(plugin, method, opts || {});
+  }
+
   // Short synthesized confirmation tones — no audio files, works offline.
   function beep(freq, ms, delay){
     try{
@@ -925,9 +938,60 @@
     });
   }
 
+  function blobToDataUrl(blob){
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(fr.error);
+      fr.onload = () => resolve(String(fr.result || ''));
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Native export. A WebView anchor download goes nowhere useful and the Web
+   * Share API isn't implemented in Android WebView either, so:
+   *   save — MediaStore, into Pictures/Cut Once
+   *   send — stage a PNG in Cache, then hand its file:// URI to the Share
+   *          plugin (Share wants URIs, not a data URL)
+   * Never falls back to the web path: on native that path is a dead end that
+   * would also toast a save that didn't happen.
+   */
+  async function nativeExport(mode, blob){
+    try {
+      const dataUrl = await blobToDataUrl(blob);
+
+      if (mode === 'save'){
+        const r = await nativeCall('CutOnce', 'saveToGallery', { dataUrl, name: 'cut-once.png' });
+        if (r && r.ok){ toast('Saved to gallery \u2014 Cut Once'); return; }
+        if (r && r.reason !== 'unsupported'){ toast('Could not save to gallery'); return; }
+        // Android 9 and older have no scoped-storage MediaStore route, so fall
+        // through to the share sheet — the user can still pick Files or Drive.
+      }
+
+      // strip the "data:image/png;base64," prefix — writeFile wants bare base64
+      const written = await nativeCall('Filesystem', 'writeFile', {
+        path: 'cut-once-' + Date.now() + '.png',
+        data: dataUrl.slice(dataUrl.indexOf(',') + 1),
+        directory: 'CACHE',
+        recursive: false
+      });
+      if (!written || !written.uri){ toast('Share failed'); return; }
+      await nativeCall('Share', 'share', {
+        title: 'Cut Once',
+        files: [written.uri],
+        dialogTitle: 'Share cut list'
+      });
+    } catch (err){
+      const msg = String((err && err.message) || err || '');
+      if (/cancel/i.test(msg)) return; // user dismissed the sheet, not a failure
+      toast(mode === 'save' ? 'Could not save image' : 'Share failed');
+    }
+  }
+
   async function exportImage(mode){
     const blob = await compositeToBlob();
     if (!blob){ toast('Could not build image'); return; }
+    if (nativeOk){ await nativeExport(mode, blob); return; }
     const file = new File([blob], 'cut-once.png', { type: 'image/png' });
     const canShare = mode === 'share' && window.isSecureContext && navigator.share && navigator.canShare && navigator.canShare({ files: [file] });
     if (canShare){
@@ -1030,17 +1094,157 @@
   }
 
   // ---- voice ----
+  // Two engines feed one transcript handler:
+  //   native — Android's on-device SpeechRecognizer via the CutOnce plugin.
+  //            Recognizes against the local language model, so it still works
+  //            in a dead-signal crawlspace, which is the whole reason the
+  //            native build exists.
+  //   web    — the browser Web Speech API, which streams audio to Google.
+  // Inside the APK only "native" is possible: Android WebView implements
+  // neither SpeechRecognition nor webkitSpeechRecognition.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const micBtn = document.getElementById('toolMic');
   const isSecure = window.isSecureContext;
 
-  if (!SR){
+  let probePromise = null;
+  let nativeLooping = false;
+  // Pause before retrying a phrase that errored, so a recognizer that keeps
+  // failing can't spin into a hot loop and eat the battery.
+  const NATIVE_RETRY_MS = 700;
+
+  function engineKind(){
+    if (nativeSpeech) return 'native';
+    if (SR && isSecure) return 'web';
+    return 'none';
+  }
+
+  function refreshMicAvailability(){
+    if (engineKind() !== 'none'){
+      micBtn.style.opacity = '';
+      micBtn.title = 'Speak a number';
+      return;
+    }
     micBtn.style.opacity = '0.35';
-    micBtn.title = 'Speech not supported in this browser';
-  } else if (!isSecure){
-    micBtn.style.opacity = '0.35';
-    micBtn.title = 'Needs https (or localhost) to use the mic';
-  } else {
+    micBtn.title = SR
+      ? 'Needs https (or localhost) to use the mic'
+      : 'Speech not supported in this browser';
+  }
+
+  /** Asks the plugin whether on-device recognition exists. No-op on web. */
+  function probeNative(){
+    if (!Cap || typeof Cap.nativePromise !== 'function'){
+      refreshMicAvailability();
+      return Promise.resolve(false);
+    }
+    if (!probePromise){
+      probePromise = nativeCall('CutOnce', 'check')
+        .then((info) => {
+          nativeOk = true;
+          nativeSpeech = !!(info && info.available);
+        })
+        .catch(() => { nativeOk = false; nativeSpeech = false; })
+        .then(() => { refreshMicAvailability(); return nativeOk; });
+    }
+    return probePromise;
+  }
+
+  /** Shared "voice is done for now" teardown. Leaves marker rings alone. */
+  function giveUpOnVoice(message){
+    voiceMode = false;
+    nativeLooping = false;
+    micBtn.classList.remove('listening');
+    micBtn.classList.add('dead');
+    toast(message);
+  }
+
+  /**
+   * Maps an engine error code onto UI copy. Returns true when the error is
+   * fatal and listening should stop; false means keep going (silence, a
+   * transient blip). Both engines emit the same code names — the plugin
+   * deliberately translates Android's numeric errors into Web Speech ones.
+   */
+  function handleVoiceError(code){
+    if (code === 'not-allowed' || code === 'service-not-allowed'){
+      toast('Mic permission blocked');
+      return true;
+    }
+    if (code === 'audio-capture'){
+      toast('No mic found');
+      return true;
+    }
+    if (code === 'no-speech' || code === 'busy') return false; // keep listening quietly
+    if (code === 'network'){
+      // On native this means no signal *and* no offline pack. Blaming the
+      // internet there would be misleading — installing the pack is the fix.
+      toast(nativeSpeech ? 'No offline speech pack installed' : 'No signal — voice needs internet');
+      return false;
+    }
+    toast('Mic error: ' + code);
+    return false;
+  }
+
+  /** One spoken phrase, from either engine. */
+  function handleTranscript(raw){
+    if (!raw) return;
+    autoRestarts = 0;
+    micBtn.classList.remove('dead');
+    const lower = raw.toLowerCase();
+
+    // "next" moves on to the next spot you tapped. Past the last spot it
+    // does nothing, so a stray "next" never resets the sequence.
+    if (/^\s*next[.!]?\s*$/.test(lower)){
+      const now = Date.now();
+      if (now - lastNextAt < 500) return; // swallow an accidental double-"next"
+      lastNextAt = now;
+      if (voicePointIdx < voicePoints.length - 1){
+        voicePointIdx++;
+        syncActiveMark();
+        sfxNext();
+        buzz([30, 40, 30]);
+        toast('Next spot');
+      } else if (voicePoints[voicePointIdx] && !voicePoints[voicePointIdx].done){
+        toast('Last spot');
+      } else {
+        toast('No more spots');
+      }
+      return;
+    }
+
+    // "back" removes the most recent spoken label and re-aims at its spot
+    if (/^\s*back[.!]?\s*$/.test(lower)){
+      if (undoLastLabel()){ sfxNext(); toast('Back one'); }
+      else toast('Nothing to back up');
+      return;
+    }
+
+    if (!voicePoints.length){
+      toast('Tap a spot first, then speak the number');
+      return;
+    }
+    const p = voicePoints[voicePointIdx];
+    if (p.done && !p.editing){
+      toast('That spot is labeled \u2014 tap it to change it, or say "next"');
+      return;
+    }
+
+    const text = formatMeasurement(raw);
+    if (!text){ toast('Didn\u2019t catch a number'); return; }
+    // re-speaking a selected spot replaces its old label instead of stacking
+    if (p.done){
+      ops = ops.filter(op => !(op.kind === 'text' && op.pointIndex === voicePointIdx));
+    }
+    const clamped = clampTextX(text, toScreen(p.nx, p.ny).x).clamped;
+    pushOp({ kind:'text', nx:p.nx, ny:p.ny, text, ink:currentInk(), size:VOICE_FONT_SIZE, pointIndex:voicePointIdx });
+    p.done = true;
+    p.editing = false;
+    if (p.el && p.el.parentNode){ p.el.parentNode.removeChild(p.el); p.el = null; }
+    render();
+    sfxLanded(clamped);
+    buzz(clamped ? [40, 40, 40] : 60);
+    toast(voicePointIdx === voicePoints.length - 1 ? 'Last spot labeled' : 'Say "next" when ready');
+  }
+
+  if (SR && isSecure){
     recognition = new SR();
     recognition.continuous = true;
     recognition.interimResults = false;
@@ -1053,80 +1257,11 @@
     recognition.onresult = (event) => {
       const res = event.results[event.results.length - 1];
       if (!res.isFinal) return;
-      const raw = res[0].transcript.trim();
-      if (!raw) return;
-      autoRestarts = 0;
-      micBtn.classList.remove('dead');
-      const lower = raw.toLowerCase();
-
-      // "next" moves on to the next spot you tapped. Past the last spot it
-      // does nothing, so a stray "next" never resets the sequence.
-      if (/^\s*next[.!]?\s*$/.test(lower)){
-        const now = Date.now();
-        if (now - lastNextAt < 500) return; // swallow an accidental double-"next"
-        lastNextAt = now;
-        if (voicePointIdx < voicePoints.length - 1){
-          voicePointIdx++;
-          syncActiveMark();
-          sfxNext();
-          buzz([30, 40, 30]);
-          toast('Next spot');
-        } else if (voicePoints[voicePointIdx] && !voicePoints[voicePointIdx].done){
-          toast('Last spot');
-        } else {
-          toast('No more spots');
-        }
-        return;
-      }
-
-      // "back" removes the most recent spoken label and re-aims at its spot
-      if (/^\s*back[.!]?\s*$/.test(lower)){
-        if (undoLastLabel()){ sfxNext(); toast('Back one'); }
-        else toast('Nothing to back up');
-        return;
-      }
-
-      if (!voicePoints.length){
-        toast('Tap a spot first, then speak the number');
-        return;
-      }
-      const p = voicePoints[voicePointIdx];
-      if (p.done && !p.editing){
-        toast('That spot is labeled \u2014 tap it to change it, or say "next"');
-        return;
-      }
-
-      const text = formatMeasurement(raw);
-      if (!text){ toast('Didn\u2019t catch a number'); return; }
-      // re-speaking a selected spot replaces its old label instead of stacking
-      if (p.done){
-        ops = ops.filter(op => !(op.kind === 'text' && op.pointIndex === voicePointIdx));
-      }
-      const clamped = clampTextX(text, toScreen(p.nx, p.ny).x).clamped;
-      pushOp({ kind:'text', nx:p.nx, ny:p.ny, text, ink:currentInk(), size:VOICE_FONT_SIZE, pointIndex:voicePointIdx });
-      p.done = true;
-      p.editing = false;
-      if (p.el && p.el.parentNode){ p.el.parentNode.removeChild(p.el); p.el = null; }
-      render();
-      sfxLanded(clamped);
-      buzz(clamped ? [40, 40, 40] : 60);
-      toast(voicePointIdx === voicePoints.length - 1 ? 'Last spot labeled' : 'Say "next" when ready');
+      handleTranscript(res[0].transcript.trim());
     };
 
     recognition.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){
-        toast('Mic permission blocked');
-        stopVoice();
-      } else if (e.error === 'no-speech'){
-        // keep listening quietly, onend will restart
-      } else if (e.error === 'network'){
-        toast('No signal — voice needs internet');
-      } else if (e.error === 'audio-capture'){
-        toast('No mic found');
-        stopVoice();
-      } else {
-        toast('Mic error: ' + e.error);
-      }
+      if (handleVoiceError(e.error)) stopVoice();
     };
 
     recognition.onend = () => {
@@ -1135,10 +1270,7 @@
       // is what keeps it "always on". But bail out instead of looping forever
       // when restarts keep failing (dead signal, mic grabbed by another app).
       if (autoRestarts >= MAX_AUTO_RESTARTS){
-        voiceMode = false;
-        micBtn.classList.remove('listening');
-        micBtn.classList.add('dead');
-        toast('Voice unavailable \u2014 tap mic to retry');
+        giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
         return;
       }
       autoRestarts++;
@@ -1146,14 +1278,55 @@
     };
   }
 
-  function startVoice(){
-    if (!SR || !isSecure) return;
+  /**
+   * Native counterpart to recognition.onend's restart loop. listenOnce()
+   * resolves once per phrase — SpeechRecognizer isn't built for continuous
+   * use — so this loop, not the plugin, owns the cadence.
+   */
+  async function runNativeLoop(){
+    nativeLooping = true;
+    while (voiceMode && nativeLooping){
+      let res;
+      try {
+        res = await nativeCall('CutOnce', 'listenOnce');
+      } catch (err){
+        giveUpOnVoice('Voice engine failed');
+        return;
+      }
+      if (!voiceMode || !nativeLooping) return;  // stopped, or app backgrounded
+      if (res && res.cancelled) return;
+      if (res && res.transcript){
+        handleTranscript(res.transcript);
+        continue;                                // straight back into listening
+      }
+      if (handleVoiceError((res && res.error) || 'client')){ stopVoice(); return; }
+      if (autoRestarts >= MAX_AUTO_RESTARTS){
+        giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
+        return;
+      }
+      autoRestarts++;
+      await new Promise((r) => setTimeout(r, NATIVE_RETRY_MS));
+    }
+  }
+
+  async function startVoice(){
+    if (probePromise) await probePromise;  // never pick an engine mid-probe
+    const kind = engineKind();
+    if (kind === 'none'){
+      refreshMicAvailability();
+      toast(SR ? 'Mic needs https' : 'Speech not supported here');
+      return;
+    }
     voiceMode = true;
     autoRestarts = 0;
     micBtn.classList.remove('dead');
     resetVoicePoints();
     micBtn.classList.add('listening');
-    toast('Listening\u2026');
+    toast(kind === 'native' ? 'Listening\u2026 on-device' : 'Listening\u2026');
+    if (kind === 'native'){
+      runNativeLoop();
+      return;
+    }
     try {
       recognition.start();
     } catch(err){
@@ -1165,15 +1338,19 @@
 
   function stopVoice(){
     voiceMode = false;
+    nativeLooping = false;
     micBtn.classList.remove('listening');
     // clear any unlabeled marker rings so they don't linger as visual junk
     resetVoicePoints();
     if (recognition){ try { recognition.stop(); } catch(err){} }
+    if (nativeOk){ nativeCall('CutOnce', 'stop').catch(() => {}); }
   }
 
   micBtn.addEventListener('click', () => {
     if (voiceMode) stopVoice(); else startVoice();
   });
+
+  probeNative();
 
   // ---- splash + info ----
   document.getElementById('splash').addEventListener('click', function(){

@@ -4,8 +4,9 @@
 - **HTML5** (index.html)
 - **CSS3** (custom properties, variables)
 - **ECMAScript 2023** (vanilla JavaScript, no transpilation)
-- No external libraries, frameworks, or build tools.
-- No package.json; therefore no npm scripts.
+- No external libraries, frameworks, or build tools in the web app.
+- No root package.json; therefore no npm scripts at the root. `mobile/` has its own package.json, but only for the Capacitor toolchain — it never touches the web app's source.
+- **Android**: Capacitor 8 wrapper in `mobile/`, JDK 21, minSdk 24, compile/target SDK 36.
 
 ## Entry Point
 - `index.html` serves as the single-page application entry point.
@@ -25,7 +26,8 @@
 
 ## External Integrations
 - **Web Speech API** (`SpeechRecognition`) for voice‑to‑text number input.
-- **Navigator.share API** for sharing the final image (when available).
+- **Navigator.share API** for sharing the final image (web only, when available).
+- **Android build only**: the `CutOnce` Capacitor plugin (on-device `SpeechRecognizer`, MediaStore gallery save), plus `@capacitor/share` and `@capacitor/filesystem`. Android WebView has neither the Web Speech API nor `navigator.share`, so these are not enhancements there — they are the only working paths. Details in `mobile/BUILD-ANDROID.md`.
 - **Clipboard / File System** via `<input type="file">` for camera/gallery photos.
 - No third‑party services, analytics, or APIs.
 
@@ -38,6 +40,15 @@
   - `assets`: serves directory `./` with SPA fallback (`not_found_handling`: "single-page-application")
   - `routes`: pattern `cutonce.crackerbox.app` with custom domain.
 - The app must be served as a static SPA; all routes fallback to `index.html`.
+- `mobile` is listed in `.assetsignore` so the Android project is never uploaded as a static asset. Keep it there.
+
+## Native Android Build
+Full instructions, the plugin contract, and the offline test checklist live in **`mobile/BUILD-ANDROID.md`**. The short version:
+
+- `mobile/www/index.html` and `mobile/android/app/src/main/assets/public/index.html` are **generated**. The only source of truth is the root `index.html`, copied by `mobile/scripts/sync-www.mjs`.
+- Every edit to `index.html` needs `npm run sync` (from `mobile/`) before the APK picks it up, then `gradlew.bat assembleDebug` (from `mobile/android/`).
+- `gradlew.bat` needs `JAVA_HOME` and `ANDROID_HOME`. They are set at user/machine level, but a process only inherits variables that existed at launch — an already-open shell or the agent's own shell will not see them and Gradle fails with `JAVA_HOME is not set`. Restart the program or inject them for one command.
+- The web app must keep working with **no bridge present**: `window.Capacitor` is undefined on the Cloudflare deploy, `probeNative()` short-circuits, `nativeOk` stays false, and voice plus export take the original browser paths.
 
 ## Established Conventions
 - **UI Layout**:
@@ -75,9 +86,13 @@
 - Do **not** introduce any build step, bundler, or framework (e.g., React, Vue, Svelte, TypeScript) unless the user explicitly requests a migration; such a change would alter the deployment model.
 - Maintain the **same CSS variable names** (`--bg`, `--ink`, `--pill`, etc.) if modifying theme‑related styles; otherwise update consistently.
 - Preserve the **undo limit (12)** and the **undo stack implementation** unless a well‑justified change is made.
-- Keep the **voice‑to‑text flow** (SpeechRecognition → `formatMeasurement` → `fillText`) intact; any changes should retain the same behavior for number input.
+- Keep the **voice‑to‑text flow** (engine → `handleTranscript` → `formatMeasurement` → `fillText`) intact; any changes should retain the same behavior for number input. "Engine" means the browser `SpeechRecognition` on web and the `CutOnce` plugin's `listenOnce()` on Android.
 - Do **not** remove or change the **share/save slot mechanics** without ensuring backward compatibility for existing slot data.
 - If adding new features, follow the existing code style: vanilla JS, direct DOM manipulation, minimal abstractions, and avoid global namespace pollution where possible (though the current code already uses globals).
 - Ensure any new code works in modern browsers that support the Web Speech API and Navigator.share (graceful fallbacks are already present).
 - Do not modify `wrangler.json` unless adjusting compatibility date, routes, or asset handling; the workers_dev flag should remain true for local development.
 - The app must continue to pass as a valid Cloudflare Workers SPA; test with `wrangler dev` before deploying.
+- **Voice has two engines behind one handler.** Any new spoken command goes in `handleTranscript()`, never in an engine-specific callback, or the web and Android builds drift apart. Likewise keep the plugin's error codes Web-Speech-compatible so `handleVoiceError()` stays shared.
+- Reach native plugins through `window.Capacitor.nativePromise(plugin, method, opts)`. `registerPlugin()` is **not** available — it lives in `@capacitor/core`, which is deliberately not bundled.
+- Never hand-edit `mobile/www/**` or `mobile/android/app/src/main/assets/**`; both are regenerated by `npm run sync`.
+- The `MAX_AUTO_RESTARTS` (8) budget applies to both engines. The native loop adds a `NATIVE_RETRY_MS` pause between failed phrases — keep it, or a failing recognizer hot-loops.
