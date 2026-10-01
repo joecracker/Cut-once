@@ -10,4 +10,20 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(CutOncePlugin.class);
         super.onCreate(savedInstanceState);
     }
+
+    // These two are the authoritative foreground signal. The plugin also gets
+    // Capacitor's handleOnPause(), but driving it from here means the mic is
+    // released even if that dispatch ever changes or fails.
+    // public, not protected: BridgeActivity widens both of these.
+    @Override
+    public void onResume() {
+        super.onResume();
+        CutOncePlugin.enteredForeground();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        CutOncePlugin.enteredBackground();
+    }
 }

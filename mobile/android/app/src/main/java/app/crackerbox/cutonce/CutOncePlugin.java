@@ -64,6 +64,15 @@ public class CutOncePlugin extends Plugin {
 
     private SpeechRecognizer recognizer;
 
+    /**
+     * One plugin instance, one activity. MainActivity drives this from its own
+     * onPause/onResume rather than trusting Capacitor to dispatch
+     * handleOnPause() here — see enteredBackground().
+     */
+    private static volatile CutOncePlugin active;
+
+    private volatile boolean foreground = true;
+
     // ---------------------------------------------------------------- speech
 
     @PluginMethod
@@ -116,19 +125,21 @@ public class CutOncePlugin extends Plugin {
     /** Cancels an in-flight listenOnce and tears the recognizer down. */
     @PluginMethod
     public void stop(PluginCall call) {
-        PluginCall waiting = takePending();
-        destroyRecognizer();
-        if (waiting != null) {
-            JSObject cancelled = new JSObject();
-            cancelled.put("cancelled", true);
-            waiting.resolve(cancelled);
-        }
+        forceStop();
         JSObject ret = new JSObject();
         ret.put("ok", true);
         call.resolve(ret);
     }
 
     private void beginListen(PluginCall call) {
+        // The web loop can wake from its retry sleep after the activity has
+        // already paused. Starting a recognizer then leaves the mic recording
+        // for as long as the app sits in recents, so refuse outright instead of
+        // depending on the loop noticing in time.
+        if (!foreground) {
+            call.resolve(cancelledResult());
+            return;
+        }
         PluginCall waiting = takePending();
         if (waiting != null) {
             // only one phrase can be awaited at a time; don't strand the caller
@@ -262,6 +273,12 @@ public class CutOncePlugin extends Plugin {
         return ret;
     }
 
+    private static JSObject cancelledResult() {
+        JSObject ret = new JSObject();
+        ret.put("cancelled", true);
+        return ret;
+    }
+
     private PluginCall takePending() {
         PluginCall call = pending;
         pending = null;
@@ -357,29 +374,48 @@ public class CutOncePlugin extends Plugin {
     // ---------------------------------------------------------------- lifecycle
 
     @Override
+    public void load() {
+        active = this;
+    }
+
+    /**
+     * Releases the mic and refuses to take it back until the activity resumes.
+     *
+     * Capacitor does dispatch handleOnPause() to plugins, but that alone left a
+     * hole: when the activity paused between phrases there was no pending call
+     * to cancel, so the web loop woke from its retry sleep, saw nothing had
+     * told it to stop, and started a brand new recognizer in the background.
+     * Since silence restarts for free at that cadence, the mic then stayed hot
+     * indefinitely. Blocking beginListen() on the foreground flag closes it no
+     * matter what the web side does.
+     */
+    static void enteredBackground() {
+        CutOncePlugin plugin = active;
+        if (plugin == null) return;
+        plugin.foreground = false;
+        plugin.forceStop();
+    }
+
+    static void enteredForeground() {
+        CutOncePlugin plugin = active;
+        if (plugin != null) plugin.foreground = true;
+    }
+
+    /** Tears the recognizer down and settles any awaiting listenOnce(). */
+    private void forceStop() {
+        PluginCall waiting = takePending();
+        destroyRecognizer();
+        if (waiting != null) waiting.resolve(cancelledResult());
+    }
+
+    @Override
     protected void handleOnPause() {
-        // Android 14+ refuses background mic access anyway, and a stranded
-        // promise would wedge the web side's listen loop.
-        if (pending != null || recognizer != null) {
-            PluginCall waiting = takePending();
-            destroyRecognizer();
-            if (waiting != null) {
-                JSObject cancelled = new JSObject();
-                cancelled.put("cancelled", true);
-                waiting.resolve(cancelled);
-            }
-        }
+        enteredBackground();
     }
 
     @Override
     protected void handleOnDestroy() {
-        PluginCall waiting = takePending();
-        destroyRecognizer();
-        if (waiting != null) {
-            JSObject cancelled = new JSObject();
-            cancelled.put("cancelled", true);
-            waiting.resolve(cancelled);
-        }
+        forceStop();
         super.handleOnDestroy();
     }
 }

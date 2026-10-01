@@ -93,9 +93,20 @@ isn't bundled. The bridge itself is injected before any page script runs, so
 `listenOnce()` resolves **once per phrase** — `SpeechRecognizer` is not built
 for continuous use. `index.html` owns the restart cadence in `runNativeLoop()`,
 reusing the same `autoRestarts` / `MAX_AUTO_RESTARTS` budget as the web engine,
-with a `NATIVE_RETRY_MS` pause so a failing recognizer can't hot-loop. Plain
-silence (`no-speech`) restarts for free and never touches that budget — walking
-between marks is not a failure; only real errors count against it.
+with a `NATIVE_RETRY_MS` pause so a failing recognizer can't hot-loop. Every
+restart counts against that budget, silence included, and any real result
+resets it to zero — so `MAX_AUTO_RESTARTS` (12) doubles as the idle timeout
+that ends a session nobody is using any more. Roughly a minute and a half of
+continuous silence.
+
+`listenOnce()` also resolves `{ cancelled: true }` **without touching the mic**
+if the activity is not in the foreground. `MainActivity.onPause()` flips that
+flag and forces the recognizer down; `onResume()` clears it. This matters
+because the web loop can wake from its `NATIVE_RETRY_MS` sleep *after* the
+activity has paused — with no pending call to cancel, it would otherwise start
+a fresh recognizer and leave the mic recording for as long as the app sits in
+recents. Blocking at `beginListen()` closes that regardless of what the JS
+side does, so don't remove the guard.
 
 The plugin translates Android's numeric errors into Web Speech code names
 (`network`, `no-speech`, `audio-capture`, `not-allowed`, `busy`), so both
@@ -117,8 +128,13 @@ The point of the whole exercise is offline voice, so test it offline:
 4. Say "next", then a second number. Say "back" and confirm it undoes.
 5. Tap Send — the Android share sheet should appear.
 6. Tap Download — the PNG should land in `Pictures/Cut Once`.
-7. Background the app mid-listen and return; the mic should not be wedged
-   (`handleOnPause` cancels the pending phrase).
+7. Background the app mid-listen (home button, not a swipe-away) and return.
+   The session should have **ended**: mic button unlit, one tap restarts it.
+   Then leave it in recents for several minutes and confirm no mic-in-use
+   indicator is showing — that's the background leak the foreground guard
+   exists to prevent.
+8. Start the mic, say nothing, and wait. After ~12 silent restarts it should
+   give up with *"Voice unavailable — tap mic to retry"* and release the mic.
 
 Also re-check the **web** deploy after any voice change: with no bridge,
 `probeNative()` short-circuits, `nativeOk` stays false, and both

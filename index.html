@@ -161,6 +161,16 @@
     -webkit-tap-highlight-color:transparent;
   }
   #infoCard h3{ margin:16px 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; opacity:.65; }
+  #infoCard .hint{ margin:0 0 8px; font-size:12px; opacity:.6; }
+  /* Verbatim recognizer output, so a mis-rendered number can be traced back
+     to what was actually heard instead of guessed at. */
+  #rawLog{
+    margin:0; padding:10px 12px; border-radius:10px;
+    background:rgba(255,255,255,0.06); color:var(--ink);
+    font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    white-space:pre-wrap; word-break:break-word; opacity:.85;
+    max-height:132px; overflow-y:auto;
+  }
 
   /* slot gallery overlay */
   #slotPanel{ position:fixed; inset:0; z-index:45; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; padding:20px; }
@@ -227,6 +237,9 @@
       <li>Top right also has camera, gallery, pencil color (on a photo), and wipe.</li>
       <li>Say "by" between two numbers for a dimension: "fifteen by sixty-seven" becomes 15&times;67.</li>
     </ul>
+    <h3>Last heard</h3>
+    <p class="hint">Verbatim from the recognizer, newest first. When a number lands wrong, this shows what was actually heard.</p>
+    <div id="rawLog">Nothing yet.</div>
   </div>
 </div>
 
@@ -337,9 +350,8 @@
 
   let audioCtx = null;
   let vibe = localStorage.getItem('cutonce_vibrate') === '1';
-  let autoRestarts = 0;      // real-error restarts since last real result (silence is free)
-  const MAX_AUTO_RESTARTS = 8;
-  let silenceRestart = false; // last engine error was plain silence, not a failure
+  let autoRestarts = 0;      // restarts since the last real result, silence included
+  const MAX_AUTO_RESTARTS = 12;
   let lastNextAt = 0;        // debounce for double-"next"
 
   // ---- native bridge (Capacitor Android build only) ----
@@ -384,10 +396,14 @@
     document.getElementById('inkSwatch').style.background = customInk || '#888';
   }
 
+  // Two dark pads. The second used to be an off-white "light" mode, but the
+  // cards and bubbles are hardcoded #17171a and never follow the theme, so a
+  // pale pad put dark panels on a dirty-gray field. Gunmetal keeps everything
+  // in the same family and still reads as the lighter of the two.
   function themeColors(){
     return theme === 'dark'
       ? { bg: '#0b0b0c', ink: '#f4f4f2' }
-      : { bg: '#f4f4f2', ink: '#0b0b0c' };
+      : { bg: '#2f3438', ink: '#e6e9ec' };
   }
 
   function setCanvasSize(){
@@ -410,6 +426,7 @@
     const { bg, ink } = themeColors();
     document.documentElement.style.setProperty('--bg', bg);
     document.documentElement.style.setProperty('--ink', ink);
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', bg);
   }
 
   // ---- vector ink: every mark is an instruction, not pixels ----
@@ -755,7 +772,7 @@
     document.getElementById('setVibe').textContent = 'Vibration: ' + (vibe ? 'on' : 'off');
   }
   document.getElementById('setTheme').addEventListener('click', () => {
-    theme = theme === 'dark' ? 'light' : 'dark';
+    theme = theme === 'dark' ? 'graphite' : 'dark';
     applyThemeVars();
     syncSettingLabels();
   });
@@ -1048,14 +1065,32 @@
     return s1 + '\u2044' + s2;
   }
 
+  // Numerators run up to 63, so the compound tens have to be listed ahead of
+  // the bare ones or "twenty-nine" captures as just "twenty". These run before
+  // wordsToDigits, which is why the numerator is still a word here.
+  const NUM_WORD =
+    '((?:twenty|thirty|forty|fifty)[- ](?:one|two|three|four|five|six|seven|eight|nine)' +
+    '|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen' +
+    '|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|\\d{1,2})';
+
+  const RE_32NDS = new RegExp(
+    '\\b(?:and\\s+)?(?:' + NUM_WORD + '\\s+)?(?:thirty(?:[- ]two)?|3[02])[\\s-]+seconds?\\b', 'g');
+
+  // Both arms need an explicit "fourth(s)" tail. Without it a plain whole
+  // number like "sixty-four inches" would be eaten as a fraction.
+  const RE_64THS = new RegExp(
+    '\\b(?:and\\s+)?(?:' + NUM_WORD + '\\s+)?' +
+    '(?:sixty[- ]four[\\s-]+(?:seconds?|fourths?)|sixty[\\s-]+fourths?)\\b', 'g');
+
   function formatMeasurement(raw){
-    // Spoken 32nds ("three thirty-seconds") must be rewritten BEFORE
-    // wordsToDigits, because that step adds consecutive number words together
-    // ("three thirty" -> 33) and the fraction becomes unrecoverable. The
-    // ordinal form lets ordFrac below finish the job.
-    const src = raw.toLowerCase().replace(
-      /\b(?:and\s+)?(?:(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})\s+)?(?:thirty(?:[- ]two)?|3[02])[\s-]+seconds?\b/g,
-      (m, n) => ' and ' + (n || 'a') + ' 32nds ');
+    // Spoken 32nds and 64ths ("three thirty-seconds", "five sixty-fourths")
+    // must be rewritten to ordinal form BEFORE wordsToDigits, because that step
+    // adds consecutive number words together ("three thirty" -> 33, "five
+    // sixty" -> 65) and the fraction becomes unrecoverable. ordFrac below then
+    // turns "3 32nds" into the stacked glyphs.
+    const src = raw.toLowerCase()
+      .replace(RE_64THS, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
+      .replace(RE_32NDS, (m, n) => ' and ' + (n || 'a') + ' 32nds ');
     let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
@@ -1066,9 +1101,9 @@
     t = t.replace(/\bx\b/g, ' × ');
     t = t.replace(/\s*point\s*/g, '.');
 
-    // Word-form fractions for the other denominators. 32nds is handled above,
-    // before wordsToDigits, because its spoken form would otherwise collapse
-    // into the whole number.
+    // Word-form fractions for the other denominators. 32nds and 64ths are
+    // handled above, before wordsToDigits, because their spoken forms would
+    // otherwise collapse into the whole number.
     const wordFrac = /\b(?:and\s+)?(?:(a|an|one|\d{1,2})\s+)?(halves|half|quarters|quarter|eighths|eighth|sixteenths|sixteenth)\b/g;
     t = t.replace(wordFrac, (m, numGroup, unitGroup) => {
       let denom;
@@ -1178,7 +1213,6 @@
    * deliberately translates Android's numeric errors into Web Speech ones.
    */
   function handleVoiceError(code){
-    silenceRestart = (code === 'no-speech');
     if (code === 'not-allowed' || code === 'service-not-allowed'){
       toast('Mic permission blocked');
       return true;
@@ -1198,9 +1232,20 @@
     return false;
   }
 
+  // ---- raw transcript log, shown in the settings panel ----
+  const rawLog = [];
+  const rawLogEl = document.getElementById('rawLog');
+
+  function logRawTranscript(text){
+    rawLog.unshift(text);
+    if (rawLog.length > 6) rawLog.pop();
+    rawLogEl.textContent = rawLog.join('\n');
+  }
+
   /** One spoken phrase, from either engine. */
   function handleTranscript(raw){
     if (!raw) return;
+    logRawTranscript(raw);
     autoRestarts = 0;
     micBtn.classList.remove('dead');
     const lower = raw.toLowerCase();
@@ -1281,19 +1326,15 @@
 
     recognition.onend = () => {
       if (!voiceMode) return;
-      // Chrome ends recognition after a couple seconds of silence; restarting
-      // is what keeps it "always on". Silence costs nothing; bail out instead
-      // of looping forever when restarts keep failing (dead signal, mic
-      // grabbed by another app).
-      if (silenceRestart){
-        silenceRestart = false;
-      } else {
-        if (autoRestarts >= MAX_AUTO_RESTARTS){
-          giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
-          return;
-        }
-        autoRestarts++;
+      // Chrome ends recognition after a few seconds of silence; restarting is
+      // what keeps it "always on". The cap is what stops a walked-away session
+      // holding the mic open forever — 12 silent restarts is roughly a minute
+      // and a half, and any real result resets the count to zero.
+      if (autoRestarts >= MAX_AUTO_RESTARTS){
+        giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
+        return;
       }
+      autoRestarts++;
       try { recognition.start(); } catch(err){ /* already running */ }
     };
   }
@@ -1313,16 +1354,18 @@
         giveUpOnVoice('Voice engine failed');
         return;
       }
-      if (!voiceMode || !nativeLooping) return;  // stopped, or app backgrounded
-      if (res && res.cancelled) return;
+      if (!voiceMode || !nativeLooping) return;  // user stopped it mid-call
+      // The plugin tore the recognizer down because the app left the
+      // foreground. End the session for real — returning bare leaves voiceMode
+      // and the lit mic button describing an engine that no longer exists.
+      if (res && res.cancelled){ stopVoice(); return; }
       if (res && res.transcript){
         handleTranscript(res.transcript);
         continue;                                // straight back into listening
       }
       if (handleVoiceError((res && res.error) || 'client')){ stopVoice(); return; }
-      // Plain silence means you're walking between marks, not that anything
-      // broke — re-arm straight away and leave the failure budget alone.
-      if (silenceRestart){ silenceRestart = false; continue; }
+      // Silence counts against the cap here too. It's the only thing that ends
+      // a session nobody is using any more.
       if (autoRestarts >= MAX_AUTO_RESTARTS){
         giveUpOnVoice('Voice unavailable \u2014 tap mic to retry');
         return;
@@ -1371,6 +1414,13 @@
 
   micBtn.addEventListener('click', () => {
     if (voiceMode) stopVoice(); else startVoice();
+  });
+
+  // Leaving the page ends the session. In the APK the plugin's own foreground
+  // guard is the real protection, since a paused WebView may not fire this at
+  // all — this is the web half, and it also covers a merely-hidden tab.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && voiceMode) stopVoice();
   });
 
   probeNative();
