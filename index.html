@@ -1049,7 +1049,14 @@
   }
 
   function formatMeasurement(raw){
-    let t = ' ' + wordsToDigits(raw.toLowerCase()) + ' ';
+    // Spoken 32nds ("three thirty-seconds") must be rewritten BEFORE
+    // wordsToDigits, because that step adds consecutive number words together
+    // ("three thirty" -> 33) and the fraction becomes unrecoverable. The
+    // ordinal form lets ordFrac below finish the job.
+    const src = raw.toLowerCase().replace(
+      /\b(?:and\s+)?(?:(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d{1,2})\s+)?(?:thirty(?:[- ]two)?|3[02])[\s-]+seconds?\b/g,
+      (m, n) => ' and ' + (n || 'a') + ' 32nds ');
+    let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
     // -> 12.5, "sixteen inches on center" -> 16" OC. Done before the letter
@@ -1059,11 +1066,10 @@
     t = t.replace(/\bx\b/g, ' × ');
     t = t.replace(/\s*point\s*/g, '.');
 
-    // wordsToDigits() runs first and turns "thirty" into 30, so the 32nds
-    // alias must match the DIGIT form ("30 seconds", "32 seconds") — the word
-    // form can never survive that far. 30ths isn't a trade fraction, so both
-    // spellings mean 32nds and fall through to the final else below.
-    const wordFrac = /\b(?:and\s+)?(?:(a|an|one|\d{1,2})\s+)?(halves|half|quarters|quarter|eighths|eighth|sixteenths|sixteenth|(?:30|32)\s+seconds?)\b/g;
+    // Word-form fractions for the other denominators. 32nds is handled above,
+    // before wordsToDigits, because its spoken form would otherwise collapse
+    // into the whole number.
+    const wordFrac = /\b(?:and\s+)?(?:(a|an|one|\d{1,2})\s+)?(halves|half|quarters|quarter|eighths|eighth|sixteenths|sixteenth)\b/g;
     t = t.replace(wordFrac, (m, numGroup, unitGroup) => {
       let denom;
       if (unitGroup.startsWith('half')) denom = 2;
@@ -1081,6 +1087,9 @@
       const num = (numGroup && /^\d+$/.test(numGroup)) ? parseInt(numGroup, 10) : 1;
       return ' ' + toFraction(num, denom) + ' ';
     });
+
+    // Recognizers that hand back a plain "3/32" get the same stacked glyphs.
+    t = t.replace(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/g, (m, n, d) => toFraction(parseInt(n, 10), parseInt(d, 10)));
 
     t = t.replace(/\bfeet\b/g, "'")
          .replace(/\bfoot\b/g, "'")
