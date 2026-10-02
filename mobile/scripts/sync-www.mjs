@@ -16,7 +16,7 @@ const wwwDir = join(mobileDir, 'www');
 
 // Everything the web app needs to run. Add files here if the app ever grows
 // past a single document.
-const WEB_FILES = ['index.html'];
+const WEB_FILES = ['index.html', 'splash-bg.jpg'];
 
 if (process.argv.includes('--clean')) {
   if (existsSync(wwwDir)) rmSync(wwwDir, { recursive: true, force: true });
