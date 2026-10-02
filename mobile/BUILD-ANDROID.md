@@ -135,6 +135,12 @@ The point of the whole exercise is offline voice, so test it offline:
    exists to prevent.
 8. Start the mic, say nothing, and wait. After ~12 silent restarts it should
    give up with *"Voice unavailable — tap mic to retry"* and release the mic.
+9. Open the settings panel, then press the hardware **Back** button. The panel
+   should close and your canvas should survive. Press Back again with nothing
+   open — that exits the app, which is correct. `MainActivity` forwards Back to
+   `webView.goBack()` whenever there is history to pop, because Capacitor 8's
+   core library has no back handling of its own (`@capacitor/app` is not a
+   dependency, deliberately). Unverified on a device as of 1.1 — check it.
 
 Also re-check the **web** deploy after any voice change: with no bridge,
 `probeNative()` short-circuits, `nativeOk` stays false, and both
