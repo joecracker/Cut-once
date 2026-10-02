@@ -56,6 +56,29 @@ adb install -r mobile\android\app\build\outputs\apk\debug\app-debug.apk
 Requires USB debugging on the device. `npm run open` launches Android Studio
 instead, if you prefer to run from there.
 
+## Launcher icon
+
+The blade on the home screen is generated, never hand-drawn. Master art lives in
+`resources/app-icon-source.jpg`; `scripts/make-icons.ps1` renders all fifteen
+PNGs into `android/app/src/main/res/mipmap-*/`:
+
+| File | Used by | Art size |
+|---|---|---|
+| `ic_launcher.png`, `ic_launcher_round.png` | API < 26 (legacy) | 88% of the box |
+| `ic_launcher_foreground.png` | API 26+ adaptive foreground | 64% of the 108dp box |
+
+The adaptive one is deliberately small: only the middle 66dp of the 108dp canvas
+is guaranteed visible, so full-bleed art loses its teeth to the mask. Background
+colour lives in `res/drawable/ic_launcher_background.xml` and is the mean of the
+master's corners, so the foreground's padding is seamless.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File mobile\scripts\make-icons.ps1
+```
+
+Swap the master, re-run, rebuild. Nothing reads the master at build time — the
+script is a manual step, so a replaced master does nothing until it's run.
+
 ## Why the native half exists
 
 Two things a browser cannot do:

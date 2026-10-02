@@ -7,6 +7,7 @@
 - No external libraries, frameworks, or build tools in the web app.
 - No root package.json; therefore no npm scripts at the root. `mobile/` has its own package.json, but only for the Capacitor toolchain — it never touches the web app's source.
 - **Android**: Capacitor 8 wrapper in `mobile/`, JDK 21, minSdk 24, compile/target SDK 36.
+- **Android launcher icons are generated**, not hand-drawn: `mobile/scripts/make-icons.ps1` renders every `res/mipmap-*/ic_launcher*.png` from the master art `mobile/resources/app-icon-source.jpg`. Never edit those PNGs directly — replace the master and re-run the script.
 
 ## Entry Point
 - `index.html` serves as the single-page application entry point.
