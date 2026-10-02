@@ -1147,20 +1147,49 @@
     '\\b(?:and\\s+)?(?:' + NUM_WORD + '\\s+)?(?:thirty(?:[- ]two)?|3[02])[\\s-]+seconds?\\b', 'g');
 
   // Both arms need an explicit "fourth(s)" tail. Without it a plain whole
-  // number like "sixty-four inches" would be eaten as a fraction.
+  // number like "sixty-four inches" would be eaten as a fraction. The digit arm
+  // (6[34]) is there because the recognizer frequently hands back
+  // "sixty-fourths" as a bare cardinal "64" with no unit at all; without it
+  // "64 seconds" renders as 64 instead of 1/64. RE_32NDS has carried its 3[02]
+  // arm all along, which is why "30 seconds" -> 1/32 already worked.
   const RE_64THS = new RegExp(
     '\\b(?:and\\s+)?(?:' + NUM_WORD + '\\s+)?' +
-    '(?:sixty[- ]four[\\s-]+(?:seconds?|fourths?)|sixty[\\s-]+fourths?)\\b', 'g');
+    '(?:sixty[- ]four[\\s-]+(?:seconds?|fourths?)|sixty[\\s-]+fourths?' +
+    '|6[34][\\s-]+(?:seconds?|fourths?))\\b', 'g');
+
+  // "over" phrasing: "three over thirty-two", "five and five over sixty-four",
+  // and the numerator-less "over 64". The denominator arrives as a cardinal as
+  // often as a spelled ordinal, so both arms are accepted.
+  const RE_OVER_64 = new RegExp(
+    '\\b(?:and\\s+)?(?:' + NUM_WORD + '\\s+)?over[\\s-]+(?:sixty[- ]four(?:ths?)?|6[34])\\b', 'g');
+  const RE_OVER_32 = new RegExp(
+    '\\b(?:and\\s+)?(?:' + NUM_WORD + '\\s+)?over[\\s-]+(?:thirty(?:[- ]two)?|3[02])\\b', 'g');
+
+  // Bare numerator + denominator with no unit word: "three thirty two" -> 3/32,
+  // "five sixty four" -> 5/64. The numerator is required here — on its own
+  // "thirty two" is a legitimate 32" measurement and has to survive. Any word
+  // between the two ("three hundred thirty two") blocks the match, so 332 still
+  // reads as 332.
+  const RE_BARE_64 = new RegExp('\\b(?:and\\s+)?' + NUM_WORD + '\\s+(?:sixty[- ]four)\\b', 'g');
+  const RE_BARE_32 = new RegExp('\\b(?:and\\s+)?' + NUM_WORD + '\\s+(?:thirty[- ]two)\\b', 'g');
 
   function formatMeasurement(raw){
     // Spoken 32nds and 64ths ("three thirty-seconds", "five sixty-fourths")
     // must be rewritten to ordinal form BEFORE wordsToDigits, because that step
     // adds consecutive number words together ("three thirty" -> 33, "five
     // sixty" -> 65) and the fraction becomes unrecoverable. ordFrac below then
-    // turns "3 32nds" into the stacked glyphs.
+    // turns "3 32nds" into the stacked glyphs. Order matters: "over" phrasing
+    // first, then the unit-bearing forms, then bare numerator+denominator. The
+    // rewritten output ("three 32nds") can't be re-eaten by a later rule,
+    // because every remaining pattern wants a spelled denominator or a "seconds"
+    // tail, and "32nds" offers neither.
     const src = raw.toLowerCase()
+      .replace(RE_OVER_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
+      .replace(RE_OVER_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
       .replace(RE_64THS, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
-      .replace(RE_32NDS, (m, n) => ' and ' + (n || 'a') + ' 32nds ');
+      .replace(RE_32NDS, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
+      .replace(RE_BARE_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
+      .replace(RE_BARE_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ');
     let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
