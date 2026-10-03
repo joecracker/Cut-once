@@ -1173,6 +1173,18 @@
   const RE_BARE_64 = new RegExp('\\b(?:and\\s+)?' + NUM_WORD + '\\s+(?:sixty[- ]four)\\b', 'g');
   const RE_BARE_32 = new RegExp('\\b(?:and\\s+)?' + NUM_WORD + '\\s+(?:thirty[- ]two)\\b', 'g');
 
+  // The recognizer also merges the numerator and denominator into ONE cardinal:
+  // "five and two sixty-fourths" comes back as "5 and 264" (numerator 2, denom
+  // 64), "seven and eight sixty-fourths" as "7 and 864". Nothing above sees
+  // that, because 264 is a bare number with no unit and no spelled denominator.
+  // These two rules split the trailing 32/64 back out, and they REQUIRE the
+  // "and" that introduces the fraction — that anchor is the only thing standing
+  // between a real 164" ("one sixty-four" -> "164") and 1/64", so do not loosen
+  // it to an optional "and". "and 64" ("two hundred and sixty-four") is left
+  // alone too: the numerator digit is mandatory here.
+  const RE_MERGED_64 = new RegExp('\\band\\s+([1-9]\\d?)\\s*(?:6[34])\\b', 'g');
+  const RE_MERGED_32 = new RegExp('\\band\\s+([1-9]\\d?)\\s*(?:3[02])\\b', 'g');
+
   function formatMeasurement(raw){
     // Spoken 32nds and 64ths ("three thirty-seconds", "five sixty-fourths")
     // must be rewritten to ordinal form BEFORE wordsToDigits, because that step
@@ -1189,7 +1201,9 @@
       .replace(RE_64THS, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
       .replace(RE_32NDS, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
       .replace(RE_BARE_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
-      .replace(RE_BARE_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ');
+      .replace(RE_BARE_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
+      .replace(RE_MERGED_64, (m, n) => ' and ' + n + ' 64ths ')
+      .replace(RE_MERGED_32, (m, n) => ' and ' + n + ' 32nds ');
     let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
