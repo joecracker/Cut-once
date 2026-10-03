@@ -119,9 +119,11 @@
      thin bands above and below read as margin instead of letterboxing.
      The art is a flex item rather than an absolutely-positioned layer, so the
      button below can never land on top of the painted name on a short screen. */
+  /* Field matches the flat near-black of splash-bg.jpg's own side edges (#0c0c0c-#0e0e0e)
+     so the contain letterbox bands above/below the art read as margin, not letterboxing. */
   #splash{
     position:fixed; inset:0; z-index:100;
-    background:#000;
+    background:#0d0d0d;
     cursor:pointer;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
   }
