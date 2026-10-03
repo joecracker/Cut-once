@@ -119,11 +119,14 @@
      thin bands above and below read as margin instead of letterboxing.
      The art is a flex item rather than an absolutely-positioned layer, so the
      button below can never land on top of the painted name on a short screen. */
-  /* Field matches the flat near-black of splash-bg.jpg's own side edges (#0c0c0c-#0e0e0e)
-     so the contain letterbox bands above/below the art read as margin, not letterboxing. */
+  /* Field tracks the near-black of splash-bg.jpg's own edges so the contain letterbox
+     bands read as margin. Measured: the art's edge field drifts from ~#0e0e0e at the top
+     row to ~#111111 at the bottom, so a flat color leaves a faint seam at the bottom
+     only. This gradient follows that drift; the art's edges land near 5% and 88% of the
+     overlay height, where it interpolates to roughly those two values. */
   #splash{
     position:fixed; inset:0; z-index:100;
-    background:#0d0d0d;
+    background:linear-gradient(#0d0d0d, #111111);
     cursor:pointer;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
   }
