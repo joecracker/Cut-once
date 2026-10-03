@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>__TITLE__</title>
+<style>
+  :root{
+    --bg:#0b0b0c; --panel:#17171a; --ink:#f4f4f2; --dim:rgba(244,244,242,.6);
+    --accent:#c6ff00; --radius:16px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-text-size-adjust:100%; }
+  body{ min-height:100dvh; display:flex; flex-direction:column; align-items:center;
+    padding:14px 14px calc(14px + env(safe-area-inset-bottom)); gap:12px; }
+  header{ width:100%; max-width:460px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  header h1{ margin:0; font-size:16px; letter-spacing:.01em; }
+  header .summary{ margin:0; font-size:12px; color:var(--dim); }
+  #stage{ width:100%; max-width:460px; display:flex; flex-direction:column; gap:12px; }
+  #frame{ position:relative; border-radius:var(--radius); overflow:hidden;
+    background:#000; box-shadow:0 18px 50px rgba(0,0,0,.55); touch-action:pan-y; }
+  #shot{ display:block; width:100%; height:auto; }
+  #overlay{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .ring{ fill:none; stroke:var(--accent); stroke-width:3; }
+  .ring-halo{ fill:none; stroke:var(--accent); stroke-width:9; opacity:.22; }
+  .spot{ fill:rgba(0,0,0,.6); }
+  .arrow{ stroke:var(--accent); stroke-width:4; stroke-linecap:round; fill:none; }
+  .arrow-head{ fill:var(--accent); }
+  #caption{ background:var(--panel); border-radius:var(--radius); padding:14px 16px; min-height:112px; }
+  #caption h2{ margin:0 0 6px; font-size:16px; }
+  #caption p{ margin:0; font-size:14px; color:var(--dim); }
+  footer{ width:100%; max-width:460px; display:flex; align-items:center; gap:10px; }
+  footer button{ flex:1; border:0; border-radius:12px; padding:13px 10px; cursor:pointer;
+    background:rgba(255,255,255,.1); color:var(--ink); font:600 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  footer button:disabled{ opacity:.35; cursor:default; }
+  #next{ background:var(--accent); color:#0b0b0c; }
+  #next:disabled{ background:rgba(255,255,255,.1); color:var(--ink); }
+  #count{ font-size:13px; color:var(--dim); min-width:52px; text-align:center; font-variant-numeric:tabular-nums; }
+  .bar{ position:fixed; left:0; top:0; height:2px; background:var(--accent); width:0; transition:width .2s ease; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar"></div>
+<header>
+  <h1>__TITLE__</h1>
+  <p class="summary">__SUMMARY__</p>
+</header>
+
+<main id="stage">
+  <div id="frame">
+    <img id="shot" alt="">
+    <svg id="overlay" viewBox="0 0 __VIEWPORT_W__ __VIEWPORT_H__" preserveAspectRatio="none"></svg>
+  </div>
+  <div id="caption"><h2 id="capTitle"></h2><p id="capSub"></p></div>
+</main>
+
+<footer>
+  <button id="prev" type="button">‹ Back</button>
+  <span id="count"></span>
+  <button id="next" type="button">Next ›</button>
+</footer>
+
+<script>
+const SLIDES = __SLIDES_JSON__;
+const SVGNS = 'http://www.w3.org/2000/svg';
+const pad = 8, gap = 16, tail = 58;
+
+let i = -1;
+const shot = document.getElementById('shot');
+const overlay = document.getElementById('overlay');
+const capTitle = document.getElementById('capTitle');
+const capSub = document.getElementById('capSub');
+const count = document.getElementById('count');
+const prev = document.getElementById('prev');
+const next = document.getElementById('next');
+const bar = document.getElementById('bar');
+
+function el(name, attrs){
+  const node = document.createElementNS(SVGNS, name);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  return node;
+}
+
+/** Spotlight everything except the target, ring it, and point an arrow at it. */
+function drawOverlay(slide){
+  overlay.replaceChildren();
+  const t = slide.target;
+  if (!t) return;
+  const W = __VIEWPORT_W__, H = __VIEWPORT_H__;
+  const x = Math.max(0, t.x - pad), y = Math.max(0, t.y - pad);
+  const w = Math.min(W - x, t.w + pad * 2), h = Math.min(H - y, t.h + pad * 2);
+
+  overlay.append(
+    el('rect', { class:'spot', x:0, y:0, width:W, height:y }),
+    el('rect', { class:'spot', x:0, y:y + h, width:W, height:Math.max(0, H - (y + h)) }),
+    el('rect', { class:'spot', x:0, y:y, width:x, height:h }),
+    el('rect', { class:'spot', x:x + w, y:y, width:Math.max(0, W - (x + w)), height:h }),
+    el('rect', { class:'ring-halo', x:x, y:y, width:w, height:h, rx:12 }),
+    el('rect', { class:'ring', x:x, y:y, width:w, height:h, rx:12 })
+  );
+  if (!slide.arrow) return;
+
+  const cx = x + w / 2, cy = y + h / 2;
+  let sx, sy, ex, ey;
+  if (slide.arrow === 'up')         { sx = cx; sy = y + h + tail; ex = cx; ey = y + h + gap; }
+  else if (slide.arrow === 'down')  { sx = cx; sy = y - tail;     ex = cx; ey = y - gap; }
+  else if (slide.arrow === 'left')  { sx = x + w + tail; sy = cy; ex = x + w + gap; ey = cy; }
+  else                              { sx = x - tail;     sy = cy; ex = x - gap;     ey = cy; }
+
+  const ang = Math.atan2(ey - sy, ex - sx), a = 13;
+  overlay.append(
+    el('line', { class:'arrow', x1:sx, y1:sy, x2:ex, y2:ey }),
+    el('polygon', { class:'arrow-head', points:
+      `${ex},${ey} ${ex - a * Math.cos(ang - 0.5)},${ey - a * Math.sin(ang - 0.5)} ${ex - a * Math.cos(ang + 0.5)},${ey - a * Math.sin(ang + 0.5)}` })
+  );
+}
+
+function show(n){
+  i = Math.max(0, Math.min(SLIDES.length - 1, n));
+  const slide = SLIDES[i];
+  if (shot.getAttribute('src') !== slide.data) shot.setAttribute('src', slide.data);
+  capTitle.textContent = slide.title;
+  capSub.textContent = slide.caption;
+  if (slide.sub) capSub.textContent = slide.caption ? slide.caption + ' ' + slide.sub : slide.sub;
+  count.textContent = (i + 1) + ' / ' + SLIDES.length;
+  prev.disabled = i === 0;
+  next.disabled = i === SLIDES.length - 1;
+  next.textContent = i === SLIDES.length - 1 ? 'Done' : 'Next ›';
+  bar.style.width = ((i + 1) / SLIDES.length * 100) + '%';
+  drawOverlay(slide);
+}
+
+prev.addEventListener('click', () => show(i - 1));
+next.addEventListener('click', () => show(i + 1));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') show(i - 1);
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); show(i + 1); }
+});
+
+let swipeX = null;
+document.getElementById('frame').addEventListener('touchstart', (e) => { swipeX = e.touches[0].clientX; }, { passive:true });
+document.getElementById('frame').addEventListener('touchend', (e) => {
+  if (swipeX === null) return;
+  const dx = e.changedTouches[0].clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) > 45) show(dx < 0 ? i + 1 : i - 1);
+}, { passive:true });
+
+show(0);
+</script>
+</body>
+</html>
