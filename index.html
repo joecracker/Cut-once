@@ -1157,6 +1157,20 @@
     '(?:sixty[- ]four[\\s-]+(?:seconds?|fourths?)|sixty[\\s-]+fourths?' +
     '|6[34][\\s-]+(?:seconds?|fourths?))\\b', 'g');
 
+  // The recognizer's own fraction rendering: with a numerator in front it hands
+  // back a slash-joined pair and then spells the unit word — "seven
+  // thirty-seconds" arrives as "7/30 seconds", with a stray truncated denominator
+  // digit sometimes left in place ("7/3 30 seconds"). Every rule below wants a
+  // word boundary in front of the denominator digits, and the slash provides
+  // one, so the digit arms grab the "30 seconds" and leave a naked "7/" painted
+  // on the canvas (Tim's canvas, 2026-10-02: "7/ 1/32", "3 7/ 3/32").
+  // These therefore run FIRST: the numerator is whatever precedes the slash, and
+  // the spelled unit word is the anchor. The 32nd denominator cue carries the
+  // optional trailing digit because the truncation shows up as "3" as often as
+  // "30"; the 64th cue doesn't, since that form hasn't been seen truncated.
+  const RE_SLASH_32 = new RegExp('\\b(and\\s+)?(\\d{1,2})\\s*\\/\\s*(?:\\d{1,2}\\s+)?3[02]?\\s*seconds?\\b', 'g');
+  const RE_SLASH_64 = new RegExp('\\b(and\\s+)?(\\d{1,2})\\s*\\/\\s*(?:\\d{1,2}\\s+)?6[34]\\s*(?:seconds?|fourths?)\\b', 'g');
+
   // "over" phrasing: "three over thirty-two", "five and five over sixty-four",
   // and the numerator-less "over 64". The denominator arrives as a cardinal as
   // often as a spelled ordinal, so both arms are accepted.
@@ -1232,6 +1246,8 @@
     // because every remaining pattern wants a spelled denominator or a "seconds"
     // tail, and "32nds" offers neither.
     const src = raw.toLowerCase()
+      .replace(RE_SLASH_64, (m, andG, n) => (andG ? 'and ' : ' ') + n + ' 64ths ')
+      .replace(RE_SLASH_32, (m, andG, n) => (andG ? 'and ' : ' ') + n + ' 32nds ')
       .replace(RE_OVER_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
       .replace(RE_OVER_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
       .replace(RE_64THS, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
