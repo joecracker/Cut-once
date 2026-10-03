@@ -115,15 +115,16 @@
      top and the CUT · ONCE wordmark painted into the same frame, so there is
      no live #splashWord any more and no buildSplashBlade(). It is *contained*,
      never cover-cropped — cover is what amputated the old square artwork.
-     The field is pure #000 to match the image's own black background, so the
-     thin bands above and below read as margin instead of letterboxing.
      The art is a flex item rather than an absolutely-positioned layer, so the
-     button below can never land on top of the painted name on a short screen. */
-  /* Field tracks the near-black of splash-bg.jpg's own edges so the contain letterbox
-     bands read as margin. Measured: the art's edge field drifts from ~#0e0e0e at the top
-     row to ~#111111 at the bottom, so a flat color leaves a faint seam at the bottom
-     only. This gradient follows that drift; the art's edges land near 5% and 88% of the
-     overlay height, where it interpolates to roughly those two values. */
+     button below can never land on top of the painted name on a short screen.
+
+     The field is a gradient, not the flat #000 it once was. It tracks the
+     near-black of the art's own edges so the contain bands above and below
+     read as margin instead of letterboxing. Measured: that edge field drifts
+     from ~#0e0e0e at the top row to ~#111111 at the bottom, so a single color
+     left a faint seam at the bottom only. The art's edges land near 5% and 88%
+     of the overlay height, where this gradient interpolates to roughly those
+     two values. */
   #splash{
     position:fixed; inset:0; z-index:100;
     background:linear-gradient(#0d0d0d, #111111);
