@@ -186,7 +186,7 @@
     background:rgba(255,255,255,0.06); color:var(--ink);
     font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     white-space:pre-wrap; word-break:break-word; opacity:.85;
-    max-height:88px; overflow-y:auto; touch-action:pan-y;
+    max-height:220px; overflow-y:auto; touch-action:pan-y;
   }
 
   /* slot gallery overlay — same scroll/center rules as #infoPanel, because a
@@ -273,7 +273,7 @@
       <li>Say "by" between two numbers for a dimension: "fifteen by sixty-seven" becomes 15&times;67.</li>
     </ul>
     <h3>Last heard</h3>
-    <p class="hint">Verbatim from the recognizer, newest first.</p>
+    <p class="hint">What the recognizer heard, then what the pad made of it. Newest first.</p>
     <div id="rawLog">Nothing yet.</div>
     <button id="infoCloseBottom">Close</button>
   </div>
@@ -1207,6 +1207,20 @@
   const RE_FUSED_32 = new RegExp('\\b(\\d*?)3[02][\\s-]+seconds?\\b', 'g');
   const RE_FUSED_64 = new RegExp('\\b(\\d*?)6[34][\\s-]+(?:seconds?|fourths?)\\b', 'g');
 
+  // Eighth shape, straight off Tim's canvas (2026-10-02): with a numerator word
+  // in front, the recognizer sometimes drops the ordinal suffix AND the unit
+  // word, handing back one bare fused cardinal — "six sixty-fourths" arrives as
+  // "664", "one sixty-four" as "164". No "and", no th/nd, no unit, so every
+  // rule above misses it and it renders as the whole number 664.
+  //
+  // This is the shape the earlier notes said to leave alone, and it is only
+  // acceptable because the spelled route still works: a real 164" spoken as
+  // "one hundred sixty-four" keeps words between numerator and denominator, so
+  // RE_BARE_64 can't match it and wordsToDigits still yields 164. The genuine
+  // cost is that "one sixty-four" spoken as a plain dimension now reads as
+  // 1/64". Tim accepted that trade; delete this one line if it ever bites.
+  const RE_BARE_MERGED_64 = new RegExp('\\b([1-9])6[34]\\b', 'g');
+
   function formatMeasurement(raw){
     // Spoken 32nds and 64ths ("three thirty-seconds", "five sixty-fourths")
     // must be rewritten to ordinal form BEFORE wordsToDigits, because that step
@@ -1229,7 +1243,8 @@
       .replace(RE_ORD_MERGED_64, (m, n) => ' and ' + n + ' 64ths ')
       .replace(RE_ORD_MERGED_32, (m, n) => ' and ' + n + ' 32nds ')
       .replace(RE_FUSED_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
-      .replace(RE_FUSED_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ');
+      .replace(RE_FUSED_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
+      .replace(RE_BARE_MERGED_64, (m, n) => ' and ' + n + ' 64ths ');
     let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
@@ -1372,13 +1387,29 @@
   }
 
   // ---- raw transcript log, shown in the settings panel ----
+  // Each line is what the recognizer heard plus what the formatter made of it,
+  // so a wrong number can be blamed on the right half without guessing.
+  const RAW_LOG_MAX = 20;
   const rawLog = [];
   const rawLogEl = document.getElementById('rawLog');
 
+  function renderRawLog(){
+    rawLogEl.textContent = rawLog.length
+      ? rawLog.map(e => e.out ? e.raw + '   \u2192   ' + e.out : e.raw).join('\n')
+      : 'Nothing yet.';
+  }
+
   function logRawTranscript(text){
-    rawLog.unshift(text);
-    if (rawLog.length > 6) rawLog.pop();
-    rawLogEl.textContent = rawLog.join('\n');
+    rawLog.unshift({ raw:text, out:'' });
+    if (rawLog.length > RAW_LOG_MAX) rawLog.pop();
+    renderRawLog();
+  }
+
+  function logTranscriptResult(raw, out){
+    const entry = rawLog.find(e => e.raw === raw && !e.out);
+    if (!entry) return;
+    entry.out = out;
+    renderRawLog();
   }
 
   /** One spoken phrase, from either engine. */
@@ -1416,6 +1447,11 @@
       return;
     }
 
+    // formatted before the spot checks so the log still shows what a spoken
+    // number turned into, even when there was no spot to drop it on
+    const text = formatMeasurement(raw);
+    logTranscriptResult(raw, text || '(no number)');
+
     if (!voicePoints.length){
       toast('Tap a spot first, then speak the number');
       return;
@@ -1426,7 +1462,6 @@
       return;
     }
 
-    const text = formatMeasurement(raw);
     if (!text){ toast('Didn\u2019t catch a number'); return; }
     // re-speaking a selected spot replaces its old label instead of stacking
     if (p.done){
