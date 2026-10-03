@@ -40,6 +40,23 @@ export default {
       arrow: 'down'
     },
     {
+      id: 'photo',
+      run: async (api) => {
+        await api.page.setInputFiles('#photoInputGallery', api.appFile('howto-photo.jpg'));
+        await api.sleep(700);
+        await api.setTool('line');
+        await api.drag([80, 640], [330, 500]);
+        await api.expect(() => {
+          const layer = document.getElementById('photoLayer');
+          return !!layer.getAttribute('src') && layer.style.display !== 'none';
+        }, 'the gallery photo never made it onto the pad');
+      },
+      title: 'Measure right on a photo',
+      caption: 'Snap one with the camera or pull one from the gallery. The ink switches to a bright colour so it reads on any picture.',
+      target: '#toolGallery',
+      arrow: 'down'
+    },
+    {
       id: 'draw-tool',
       run: (api) => api.setTool('line'),
       title: 'The draw tool cycles',
@@ -126,23 +143,6 @@ export default {
       title: 'The undo arrow',
       caption: 'Takes off your last mark. If that mark was a spoken number, the mic jumps back to that spot too.',
       target: '#toolUndo',
-      arrow: 'down'
-    },
-    {
-      id: 'photo',
-      run: async (api) => {
-        await api.page.setInputFiles('#photoInputGallery', api.appFile('splash-bg.jpg'));
-        await api.sleep(700);
-        await api.setTool('line');
-        await api.drag([80, 640], [330, 500]);
-        await api.expect(() => {
-          const layer = document.getElementById('photoLayer');
-          return !!layer.getAttribute('src') && layer.style.display !== 'none';
-        }, 'the gallery photo never made it onto the pad');
-      },
-      title: 'Measure right on a photo',
-      caption: 'Snap one with the camera or pull one from the gallery. The ink switches to a bright colour so it reads on any picture.',
-      target: '#toolGallery',
       arrow: 'down'
     },
     {
