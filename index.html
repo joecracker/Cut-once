@@ -1196,6 +1196,17 @@
   const RE_ORD_MERGED_64 = new RegExp('\\b(\\d{1,2})(?:6[34])(?:th|ths)\\b', 'g');
   const RE_ORD_MERGED_32 = new RegExp('\\b(\\d{1,2})(?:3[02])(?:nd|nds)\\b', 'g');
 
+  // ...and sometimes it fuses the numerator onto the denominator's digits while
+  // leaving the unit word spelled: "one thirty-second" comes back as
+  // "130 second" (device log 2026-10-02) — "one thirty" collapsed into 130 and
+  // "second" survived as a word. The digit arms in RE_32NDS/RE_64THS can't see
+  // this, because "3[02]" needs a word boundary in front of it and there is
+  // none inside 130. So the leading digits are captured here and become the
+  // numerator. Empty prefix is still 1/32 ("30 seconds"), matching what those
+  // digit arms already do.
+  const RE_FUSED_32 = new RegExp('\\b(\\d*?)3[02][\\s-]+seconds?\\b', 'g');
+  const RE_FUSED_64 = new RegExp('\\b(\\d*?)6[34][\\s-]+(?:seconds?|fourths?)\\b', 'g');
+
   function formatMeasurement(raw){
     // Spoken 32nds and 64ths ("three thirty-seconds", "five sixty-fourths")
     // must be rewritten to ordinal form BEFORE wordsToDigits, because that step
@@ -1216,7 +1227,9 @@
       .replace(RE_MERGED_64, (m, n) => ' and ' + n + ' 64ths ')
       .replace(RE_MERGED_32, (m, n) => ' and ' + n + ' 32nds ')
       .replace(RE_ORD_MERGED_64, (m, n) => ' and ' + n + ' 64ths ')
-      .replace(RE_ORD_MERGED_32, (m, n) => ' and ' + n + ' 32nds ');
+      .replace(RE_ORD_MERGED_32, (m, n) => ' and ' + n + ' 32nds ')
+      .replace(RE_FUSED_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
+      .replace(RE_FUSED_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ');
     let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
