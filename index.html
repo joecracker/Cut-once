@@ -1185,6 +1185,17 @@
   const RE_MERGED_64 = new RegExp('\\band\\s+([1-9]\\d?)\\s*(?:6[34])\\b', 'g');
   const RE_MERGED_32 = new RegExp('\\band\\s+([1-9]\\d?)\\s*(?:3[02])\\b', 'g');
 
+  // Same merge, but with no whole number and no "and" in front: the recognizer
+  // returns "one thirty-second" as "132nd" and "one sixty-fourth" as "164th" —
+  // numerator and denominator fused, with the ordinal suffix still stuck on the
+  // end. That suffix is the entire anchor. This is the one shape the rules above
+  // deliberately skip, because a bare "164" is a perfectly good 164"; but a
+  // real measurement never comes back as "164th", so requiring th/nd keeps
+  // whole numbers safe. The numerator is mandatory and 1-2 digits: greedy match
+  // plus backtrack lands "132nd" on 1+32 and "564th" on 5+64.
+  const RE_ORD_MERGED_64 = new RegExp('\\b(\\d{1,2})(?:6[34])(?:th|ths)\\b', 'g');
+  const RE_ORD_MERGED_32 = new RegExp('\\b(\\d{1,2})(?:3[02])(?:nd|nds)\\b', 'g');
+
   function formatMeasurement(raw){
     // Spoken 32nds and 64ths ("three thirty-seconds", "five sixty-fourths")
     // must be rewritten to ordinal form BEFORE wordsToDigits, because that step
@@ -1203,7 +1214,9 @@
       .replace(RE_BARE_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
       .replace(RE_BARE_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
       .replace(RE_MERGED_64, (m, n) => ' and ' + n + ' 64ths ')
-      .replace(RE_MERGED_32, (m, n) => ' and ' + n + ' 32nds ');
+      .replace(RE_MERGED_32, (m, n) => ' and ' + n + ' 32nds ')
+      .replace(RE_ORD_MERGED_64, (m, n) => ' and ' + n + ' 64ths ')
+      .replace(RE_ORD_MERGED_32, (m, n) => ' and ' + n + ' 32nds ');
     let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
