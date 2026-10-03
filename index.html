@@ -1235,6 +1235,12 @@
   // 1/64". Tim accepted that trade; delete this one line if it ever bites.
   const RE_BARE_MERGED_64 = new RegExp('\\b([1-9])6[34]\\b', 'g');
 
+  // ...and its 32nd twin, added for symmetry (Tim, 2026-10-02). Same shape, same
+  // cost: a bare "132" or "130" spoken as a plain dimension now reads as 1/32.
+  // Four-digit numbers are safe (the trailing word boundary rejects "1300"), and
+  // the fused form "130 second" is eaten by RE_FUSED_32 long before this runs.
+  const RE_BARE_MERGED_32 = new RegExp('\\b([1-9])3[02]\\b', 'g');
+
   function formatMeasurement(raw){
     // Spoken 32nds and 64ths ("three thirty-seconds", "five sixty-fourths")
     // must be rewritten to ordinal form BEFORE wordsToDigits, because that step
@@ -1260,7 +1266,8 @@
       .replace(RE_ORD_MERGED_32, (m, n) => ' and ' + n + ' 32nds ')
       .replace(RE_FUSED_64, (m, n) => ' and ' + (n || 'a') + ' 64ths ')
       .replace(RE_FUSED_32, (m, n) => ' and ' + (n || 'a') + ' 32nds ')
-      .replace(RE_BARE_MERGED_64, (m, n) => ' and ' + n + ' 64ths ');
+      .replace(RE_BARE_MERGED_64, (m, n) => ' and ' + n + ' 64ths ')
+      .replace(RE_BARE_MERGED_32, (m, n) => ' and ' + n + ' 32nds ');
     let t = ' ' + wordsToDigits(src) + ' ';
 
     // trade vocabulary: "fifteen by sixty-seven" -> 15×67, "twelve point five"
