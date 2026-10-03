@@ -57,8 +57,10 @@ Full instructions, the plugin contract, and the offline test checklist live in *
   - Toolbars: `.toolbar.primary` (bottom) and `.toolbar.secondary` (top‑right).
   - Voice markers (`#voiceMarks`, child `.cursor-indicator` dots) show tapped measurement spots; only the current one carries `.active` (pulsing), the rest are steady rings.
 - **Drawing Modes**:
-  - Tool cycles: pencil → straight line → eraser.
-  - Undo stack limited to 12 steps (local `undoStack` of ImageData).
+  - Tool cycles on each tap of `#toolDraw`: pencil → straight line → arrow → eraser (`TOOL_ORDER`).
+  - Undo is a **vector op stack**, not ImageData snapshots. `ops` holds one record per mark — `kind:'stroke'` (with an `erase` flag), the tool name (`'line'`/`'arrow'`), or `kind:'text'` for a spoken label — and `replayOp`/`render` redraw everything from it. The cap is **400 ops** (`if (ops.length > 400) ops.shift()`), never 12. There is **no `undoStack` and no `ImageData`** in the file; don't reintroduce them.
+  - Undo is **voice-aware**: `undo()` pops the last op and `revivePoint()` un-completes that measurement's marker and re-aims the mic at its spot, so a measurement is never left orphaned.
+  - Spoken **"back"** routes through `undoLastLabel()`, which removes the most recent `text` op wherever it sits in the stack rather than only the top one.
 - **Theming**:
   - Two dark pads toggled via CSS variables `--bg` and `--ink`: `dark` (`#0b0b0c` / `#f4f4f2`) and `graphite` (`#2f3438` / `#e6e9ec`). There is **no light mode** — the cards and bubbles are hardcoded `#17171a` and never follow the theme, so a pale pad sat dark panels on a dirty-gray field.
   - Theme is not persisted; every load starts `dark`.
@@ -99,7 +101,7 @@ None of these are urgent; batch them into a future build. Re-read this list befo
 - Keep the **localStorage key format** (`cutonce_slot_*` and `cutonce_slot_meta_*`) unchanged to avoid breaking user data.
 - Do **not** introduce any build step, bundler, or framework (e.g., React, Vue, Svelte, TypeScript) unless the user explicitly requests a migration; such a change would alter the deployment model.
 - Maintain the **same CSS variable names** (`--bg`, `--ink`, `--pill`, etc.) if modifying theme‑related styles; otherwise update consistently.
-- Preserve the **undo limit (12)** and the **undo stack implementation** unless a well‑justified change is made.
+- Preserve the **op-stack undo** (`ops`, `pushOp`/`replayOp`, `voicePoints` revival via `revivePoint`) unless a well‑justified change is made. It is **not** 12 ImageData snapshots any more — reverting it to snapshots would be a regression.
 - Keep the **voice‑to‑text flow** (engine → `handleTranscript` → `formatMeasurement` → `fillText`) intact; any changes should retain the same behavior for number input. "Engine" means the browser `SpeechRecognition` on web and the `CutOnce` plugin's `listenOnce()` on Android.
 - Do **not** remove or change the **share/save slot mechanics** without ensuring backward compatibility for existing slot data.
 - If adding new features, follow the existing code style: vanilla JS, direct DOM manipulation, minimal abstractions, and avoid global namespace pollution where possible (though the current code already uses globals).
