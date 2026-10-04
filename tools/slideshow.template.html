@@ -57,7 +57,25 @@
   #next{ background:var(--accent); color:#0b0b0c; }
   #next:disabled{ background:rgba(255,255,255,.1); color:var(--ink); }
   #count{ font-size:13px; color:var(--dim); min-width:52px; text-align:center; font-variant-numeric:tabular-nums; }
+  #cta{ flex:1; display:flex; align-items:center; justify-content:center; text-decoration:none;
+    border-radius:12px; padding:11px 10px; background:var(--accent); color:#0b0b0c;
+    font:600 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  #cta[hidden]{ display:none; }
   .bar{ position:fixed; left:0; top:0; height:2px; background:var(--accent); width:0; transition:width .2s ease; }
+  /* A short phone is height-bound, so every pixel of chrome comes straight off the
+     picture — the shot is only ~200px wide at 390x700. Give the frame back to it:
+     tighter padding and gaps, a smaller title, tighter caption type. The caption
+     height itself is measured in script(), so no slide's words can be cut off. */
+  @media (max-height:760px){
+    body{ padding:6px 8px calc(6px + env(safe-area-inset-bottom)); gap:6px; }
+    header h1{ font-size:13px; }
+    #stage{ gap:6px; }
+    footer button, #cta{ padding:8px 10px; font-size:13px; }
+    #count{ font-size:12px; min-width:44px; }
+    #caption{ padding:9px 12px; }
+    #caption h2{ font-size:14px; margin:0 0 4px; }
+    #caption p{ font-size:12.5px; line-height:1.38; }
+  }
 </style>
 </head>
 <body>
@@ -81,6 +99,7 @@
   <button id="prev" type="button">‹ Back</button>
   <span id="count"></span>
   <button id="next" type="button">Next ›</button>
+  <a id="cta" hidden></a>
 </footer>
 
 <script>
@@ -96,7 +115,29 @@ const capSub = document.getElementById('capSub');
 const count = document.getElementById('count');
 const prev = document.getElementById('prev');
 const next = document.getElementById('next');
+const cta = document.getElementById('cta');
+const captionBox = document.getElementById('caption');
 const bar = document.getElementById('bar');
+
+const captionText = (slide) =>
+  slide.caption ? (slide.sub ? slide.caption + ' ' + slide.sub : slide.caption) : (slide.sub || '');
+
+/**
+ * The caption box is one fixed height for the whole deck so the shot never grows
+ * and shrinks between slides. That height is measured from the tallest caption in
+ * the deck instead of guessed, so no slide's words can be cut off, and the picture
+ * keeps every pixel the words do not need.
+ */
+function sizeCaption(){
+  captionBox.style.height = 'auto';
+  let tallest = captionBox.offsetHeight;
+  for (const s of SLIDES){
+    capTitle.textContent = s.title;
+    capSub.textContent = captionText(s);
+    tallest = Math.max(tallest, captionBox.offsetHeight);
+  }
+  captionBox.style.height = tallest + 'px';
+}
 
 function el(name, attrs){
   const node = document.createElementNS(SVGNS, name);
@@ -143,12 +184,16 @@ function show(n){
   const slide = SLIDES[i];
   if (shot.getAttribute('src') !== slide.data) shot.setAttribute('src', slide.data);
   capTitle.textContent = slide.title;
-  capSub.textContent = slide.caption;
-  if (slide.sub) capSub.textContent = slide.caption ? slide.caption + ' ' + slide.sub : slide.sub;
+  capSub.textContent = captionText(slide);
   count.textContent = (i + 1) + ' / ' + SLIDES.length;
   prev.disabled = i === 0;
   next.disabled = i === SLIDES.length - 1;
   next.textContent = i === SLIDES.length - 1 ? 'Done' : 'Next ›';
+  // A slide may swap the Next button for a link — used by the last slide to point
+  // at the install page.
+  cta.hidden = !slide.cta;
+  next.hidden = !!slide.cta;
+  if (slide.cta){ cta.textContent = slide.cta.label; cta.href = slide.cta.href; }
   bar.style.width = ((i + 1) / SLIDES.length * 100) + '%';
   drawOverlay(slide);
 }
@@ -169,7 +214,11 @@ document.getElementById('frame').addEventListener('touchend', (e) => {
   if (Math.abs(dx) > 45) show(dx < 0 ? i + 1 : i - 1);
 }, { passive:true });
 
+// Measure first: sizeCaption() leaves the last slide's words in the box, and
+// show(0) is what puts the right ones there.
+sizeCaption();
 show(0);
+addEventListener('resize', () => { sizeCaption(); show(i); });
 </script>
 </body>
 </html>

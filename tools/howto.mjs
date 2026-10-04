@@ -241,7 +241,8 @@ async function main() {
       caption: step.caption || '',
       sub: step.sub || '',
       target,
-      arrow: step.arrow || null
+      arrow: step.arrow || null,
+      cta: step.cta || null
     });
     console.log(`  ✓ ${index + 1}/${story.steps.length}  ${label}`);
   }

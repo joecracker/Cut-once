@@ -11,6 +11,8 @@
  * target = what to spotlight and point the arrow at: a CSS selector, an explicit
  * { x, y, w, h } in viewport pixels, or null for a plain caption slide.
  * arrow  = 'up' | 'down' | 'left' | 'right' — the direction the arrow points.
+ * cta    = optional { label, href } — replaces the Next button with a link on that
+ *          slide, which is how the last slide offers the install page.
  *
  * Viewport is 412x915; the pad is clear between the toolbars (y 130..800).
  */
@@ -197,7 +199,8 @@ export default {
       id: 'done',
       run: (api) => api.tap('#infoCloseBottom', 400),
       title: "That's the tour",
-      caption: 'Tap the mic, mark your spots, say the numbers, send the pad. Go cut something.'
+      caption: 'Tap the mic, mark your spots, say the numbers, send the pad. Go cut something.',
+      cta: { label: 'Get the app', href: '#' }
     }
   ]
 };
