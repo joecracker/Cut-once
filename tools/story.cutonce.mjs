@@ -200,7 +200,7 @@ export default {
       run: (api) => api.tap('#infoCloseBottom', 400),
       title: "That's the tour",
       caption: 'Tap the mic, mark your spots, say the numbers, send the pad. Go cut something.',
-      cta: { label: 'Get the app', href: '#' }
+      cta: { label: 'Get the app', href: '/cut-once/install/' }
     }
   ]
 };
