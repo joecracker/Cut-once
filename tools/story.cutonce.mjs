@@ -28,8 +28,7 @@ export default {
     {
       id: 'welcome',
       title: 'This is Cut Once',
-      caption: 'A black pad you draw on, and a mic that types your numbers for you.',
-      sub: 'The splash art is the only thing you have to get past.'
+      caption: 'Take a picture or add one, or just draw on a blank page. Mark the spots you need to measure, call out your numbers, and they land right on those spots.'
     },
     {
       id: 'enter',
