@@ -188,17 +188,14 @@ export default {
     },
     {
       id: 'walkthrough',
-      run: async (api) => {
-        await api.tap('#setWalk', 500);
-        await api.expect(() => document.getElementById('walkPanel').classList.contains('show'),
-          'the walkthrough panel never opened');
-      },
       title: 'Lost? Take the tour',
-      caption: '"Show me how this works" puts a coach mark on every button, one at a time.'
+      caption: '"Show me how this works" puts a coach mark on every button, one at a time.',
+      target: '#setWalk',
+      arrow: 'down'
     },
     {
       id: 'done',
-      run: (api) => api.tap('#walkSkip', 400),
+      run: (api) => api.tap('#infoCloseBottom', 400),
       title: "That's the tour",
       caption: 'Tap the mic, mark your spots, say the numbers, send the pad. Go cut something.'
     }
