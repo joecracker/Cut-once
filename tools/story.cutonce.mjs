@@ -53,7 +53,7 @@ export default {
       title: 'Measure right on a photo',
       caption: 'Snap one with the camera or pull one from the gallery. The ink switches to a bright colour so it reads on any picture.',
       target: '#toolGallery',
-      arrow: 'down'
+      arrow: 'up'
     },
     {
       id: 'draw-tool',
@@ -154,7 +154,7 @@ export default {
       title: 'Save the pad',
       caption: 'One tap saves it. Your last six pads are kept, newest first — nothing to name, nothing to file.',
       target: '#toolSave',
-      arrow: 'down'
+      arrow: 'up'
     },
     {
       id: 'load-slot',
@@ -168,7 +168,7 @@ export default {
       title: 'Bring a pad back',
       caption: 'Load shows your last six as thumbnails. Tap one and it is back, ink and all.',
       target: '#slotGrid',
-      arrow: 'left'
+      arrow: 'down'
     },
     {
       id: 'send',
@@ -184,7 +184,7 @@ export default {
       title: 'Settings live behind the gear',
       caption: '"Last heard" shows what the mic thought it heard next to what it made of it — the quickest way to catch a number that landed wrong.',
       target: '#rawLog',
-      arrow: 'right'
+      arrow: 'down'
     },
     {
       id: 'walkthrough',
