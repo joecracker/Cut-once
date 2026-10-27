@@ -20,10 +20,8 @@ Long reference material lives in `docs/` so it is not loaded on every turn. Befo
 - All logic, styling, and markup reside in this file.
 
 ## Scripts & Commands
-- No defined npm scripts.
-- Development: `wrangler dev` (starts Cloudflare Workers dev server).
-- Publishing: `wrangler publish` (deploys to Cloudflare Workers).
-- The project relies entirely on Wrangler for building and serving.
+- No defined npm scripts at the repo root (the Android project in `mobile/` has its own).
+- There is no web hosting for this app any more. To try it in a browser, serve this folder with any static server, for example `python -m http.server`.
 
 ## Persistence
 - Browser **localStorage** is used for persistent slot storage:
@@ -38,16 +36,10 @@ Long reference material lives in `docs/` so it is not loaded on every turn. Befo
 - **Clipboard / File System** via `<input type="file">` for camera/gallery photos.
 - No third‑party services, analytics, or APIs.
 
-## Deployment Constraints
-- Deployed to **Cloudflare Workers**.
-- Configured in `wrangler.json`:
-  - `name`: "cut-once"
-  - `compatibility_date`: "2026-08-29"
-  - `workers_dev`: true
-  - `assets`: serves directory `./` with SPA fallback (`not_found_handling`: "single-page-application")
-  - `routes`: pattern `cutonce.crackerbox.app` with custom domain.
-- The app must be served as a static SPA; all routes fallback to `index.html`.
-- `mobile` is listed in `.assetsignore` so the Android project is never uploaded as a static asset. Keep it there.
+## Distribution
+- Cut Once ships as an **Android app** (the APK is a GitHub Release), plus the how-to slideshow and install page at https://get.crackerbox.app/cut-once (served by the `get-crackerbox` repo, deployed by hand).
+- The old web hosting was retired on 2026-10-27: the Cloudflare Workers deploy (`wrangler.json`, `.assetsignore`, the deploy workflow) and the old Cloudflare Pages project (cut-once.pages.dev) are gone. Nothing in this repo deploys to the web. Do not bring them back unless Tim asks.
+- The app is still a single static file with no server logic.
 
 ## Native Android Build
 Full instructions, the plugin contract, and the offline test checklist live in **`mobile/BUILD-ANDROID.md`**. The short version:
@@ -55,10 +47,10 @@ Full instructions, the plugin contract, and the offline test checklist live in *
 - `mobile/www/index.html` and `mobile/android/app/src/main/assets/public/index.html` are **generated**. The only source of truth is the root `index.html`, copied by `mobile/scripts/sync-www.mjs`.
 - Every edit to `index.html` needs `npm run sync` (from `mobile/`) before the APK picks it up, then `gradlew.bat assembleDebug` (from `mobile/android/`).
 - `gradlew.bat` needs `JAVA_HOME` and `ANDROID_HOME`. They are set at user/machine level, but a process only inherits variables that existed at launch — an already-open shell or the agent's own shell will not see them and Gradle fails with `JAVA_HOME is not set`. Restart the program or inject them for one command.
-- The web app must keep working with **no bridge present**: `window.Capacitor` is undefined on the Cloudflare deploy, `probeNative()` short-circuits, `nativeOk` stays false, and voice plus export take the original browser paths.
+- The web app must keep working with **no bridge present**: `window.Capacitor` is undefined in a plain browser, `probeNative()` short-circuits, `nativeOk` stays false, and voice plus export take the original browser paths.
 
 ## Rules for Future Agents
-- Preserve the **single‑file nature** of the app; do not split into multiple files unless absolutely necessary and only if the new files are still served as static assets via Wrangler.
+- Preserve the **single‑file nature** of the app; do not split into multiple files unless absolutely necessary and only if the new files are still copied into the Android app by `mobile/scripts/sync-www.mjs`.
 - Keep the **localStorage key format** (`cutonce_slot_*` and `cutonce_slot_meta_*`) unchanged to avoid breaking user data.
 - Do **not** introduce any build step, bundler, or framework (e.g., React, Vue, Svelte, TypeScript) unless the user explicitly requests a migration; such a change would alter the deployment model.
 - Maintain the **same CSS variable names** (`--bg`, `--ink`, `--pill`, etc.) if modifying theme‑related styles; otherwise update consistently.
@@ -67,8 +59,7 @@ Full instructions, the plugin contract, and the offline test checklist live in *
 - Do **not** remove or change the **share/save slot mechanics** without ensuring backward compatibility for existing slot data.
 - If adding new features, follow the existing code style: vanilla JS, direct DOM manipulation, minimal abstractions, and avoid global namespace pollution where possible (though the current code already uses globals).
 - Ensure any new code works in modern browsers that support the Web Speech API and Navigator.share (graceful fallbacks are already present).
-- Do not modify `wrangler.json` unless adjusting compatibility date, routes, or asset handling; the workers_dev flag should remain true for local development.
-- The app must continue to pass as a valid Cloudflare Workers SPA; test with `wrangler dev` before deploying.
+- The app must keep working as a plain static page (served from any local static server) as well as inside the Android app.
 - **Voice has two engines behind one handler.** Any new spoken command goes in `handleTranscript()`, never in an engine-specific callback, or the web and Android builds drift apart. Likewise keep the plugin's error codes Web-Speech-compatible so `handleVoiceError()` stays shared.
 - Reach native plugins through `window.Capacitor.nativePromise(plugin, method, opts)`. `registerPlugin()` is **not** available — it lives in `@capacitor/core`, which is deliberately not bundled.
 - Never hand-edit `mobile/www/**` or `mobile/android/app/src/main/assets/**`; both are regenerated by `npm run sync`.

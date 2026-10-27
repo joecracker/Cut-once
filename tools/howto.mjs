@@ -8,7 +8,7 @@
  *
  *   node howto.mjs story.cutonce.mjs
  *
- * tools/ is listed in .assetsignore, so none of this ships to Cloudflare.
+ * tools/ is development-only, so none of this is part of the app.
  */
 import { chromium } from 'playwright';
 import http from 'node:http';

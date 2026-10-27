@@ -165,12 +165,10 @@ The point of the whole exercise is offline voice, so test it offline:
    core library has no back handling of its own (`@capacitor/app` is not a
    dependency, deliberately). Unverified on a device as of 1.1 — check it.
 
-Also re-check the **web** deploy after any voice change: with no bridge,
+Also re-check the plain **web** page (no bridge) after any voice change: with no bridge,
 `probeNative()` short-circuits, `nativeOk` stays false, and both
 `exportImage()` and `startVoice()` take the original browser paths.
 
 ## Deploy note
 
-`mobile` is listed in the root `.assetsignore`, so `wrangler publish` skips
-the entire Android project. Keep it there — otherwise every deploy uploads
-the Gradle wrapper, launcher PNGs and build scripts as static assets.
+There is no web deploy any more (the Cloudflare hosting was retired on 2026-10-27). The Android app is the product: build the APK as above and attach it to a GitHub Release.
